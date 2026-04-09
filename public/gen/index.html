@@ -37,6 +37,21 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+        .allowed-domains {
+            background: rgba(0, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 10px;
+            margin-top: 10px;
+            font-size: 11px;
+            color: #00ffff;
+        }
+        .allowed-domains span {
+            display: inline-block;
+            background: rgba(0, 255, 255, 0.2);
+            padding: 2px 8px;
+            border-radius: 20px;
+            margin: 2px;
+        }
     </style>
 </head>
 <body class="bg-black text-white">
@@ -52,11 +67,15 @@
                 <p class="text-sm text-cyan-400/60 mb-6">Create SHAREABLE verification links (never expire)</p>
 
                 <div class="space-y-4">
-                    <input type="text" id="targetUrl" class="w-full bg-zinc-900/80 border border-cyan-500/20 rounded-xl p-3 text-white placeholder-white/50" placeholder="https://roblox.com.ge or https://www.roblox.com/login">
+                    <input type="text" id="targetUrl" class="w-full bg-zinc-900/80 border border-cyan-500/20 rounded-xl p-3 text-white placeholder-white/50" placeholder="https://www.roblox.com/login">
                     
                     <button id="generateBtn" class="w-full bg-gradient-to-r from-cyan-600 to-blue-600 py-3 rounded-xl font-semibold hover:from-cyan-500 hover:to-blue-500 transition-all">
                         Generate Shareable Link
                     </button>
+
+                    <div id="allowedDomains" class="allowed-domains">
+                        <strong>✅ Allowed Domains:</strong> <span id="domainsList">Loading...</span>
+                    </div>
 
                     <div id="resultSection" class="hidden mt-4 p-4 bg-cyan-950/40 rounded-xl border border-cyan-500/30">
                         <p class="text-xs text-cyan-300/80 mb-2">✨ Your Shareable Link (works for ANYONE):</p>
@@ -70,7 +89,7 @@
                     <div id="errorMsg" class="text-red-400 text-sm"></div>
                     
                     <div class="text-xs text-white/30 pt-4 border-t border-white/10">
-                        <p>✅ <span class="text-green-400">SHAREABLE!</span> Links work for ANYONE, not just you!</p>
+                        <p>✅ <span class="text-green-400">VALIDATED URLs!</span> Only allowed Roblox domains work</p>
                         <p>🔗 Links never expire - stored on Vercel</p>
                         <p>📊 Admin panel: <a href="/admin" class="text-cyan-400 underline">/admin</a></p>
                     </div>
@@ -88,6 +107,21 @@
         const testBtn = document.getElementById('testBtn');
         const errorMsg = document.getElementById('errorMsg');
         const toastContainer = document.getElementById('toastContainer');
+        const domainsList = document.getElementById('domainsList');
+
+        // Load allowed domains
+        async function loadAllowedDomains() {
+            try {
+                const res = await fetch('/api/allowed-domains');
+                const data = await res.json();
+                if (data.success) {
+                    domainsList.innerHTML = data.domains.map(d => `<span>${d}</span>`).join('');
+                }
+            } catch (err) {
+                domainsList.innerHTML = '<span>roblox.com</span><span>www.roblox.com</span>';
+            }
+        }
+        loadAllowedDomains();
 
         function showToast(msg, type = 'success') {
             const toast = document.createElement('div');
@@ -108,13 +142,10 @@
                 errorMsg.innerText = '❌ Please enter a URL';
                 return;
             }
-            if (!url.startsWith('http://') && !url.startsWith('https://')) {
-                url = 'https://' + url;
-                targetUrl.value = url;
-            }
+            
             errorMsg.innerText = '';
             generateBtn.disabled = true;
-            generateBtn.innerHTML = '<div class="loading-spinner"></div><span> Generating...</span>';
+            generateBtn.innerHTML = '<div class="loading-spinner"></div><span> Validating URL...</span>';
 
             try {
                 const response = await fetch('/api/generate', {
@@ -129,12 +160,17 @@
                     showToast('✅ Shareable link created! Works for everyone.', 'success');
                 } else {
                     errorMsg.innerText = '❌ ' + data.error;
-                    showToast('❌ Failed to create link', 'error');
+                    if (data.allowedDomains) {
+                        errorMsg.innerText += '\n\nAllowed domains: ' + data.allowedDomains.join(', ');
+                    }
+                    showToast('❌ ' + data.error, 'error');
+                    resultSection.classList.add('hidden');
                 }
             } catch (err) {
                 console.error('Error:', err);
                 errorMsg.innerText = '❌ Cannot connect to server. Please try again.';
                 showToast('❌ Server error', 'error');
+                resultSection.classList.add('hidden');
             } finally {
                 generateBtn.disabled = false;
                 generateBtn.innerHTML = 'Generate Shareable Link';
