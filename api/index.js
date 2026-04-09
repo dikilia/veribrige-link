@@ -15,7 +15,7 @@ const ALLOWED_DOMAINS = [
     'roblox.com',
     'www.roblox.com',
     'web.roblox.com',
-    'api.roblox.com'
+    'roblox.com.ni'
 ];
 
 // ==================== MIDDLEWARE ====================
