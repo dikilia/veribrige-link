@@ -29,7 +29,11 @@
     },
     {
       "src": "/admin",
-      "dest": "/public/admin/index.html"
+      "dest": "/api/index.js"
+    },
+    {
+      "src": "/admin/dashboard",
+      "dest": "/api/index.js"
     },
     {
       "src": "/verify.html",
