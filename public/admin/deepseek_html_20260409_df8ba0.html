@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Login</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{min-height:100vh;background:linear-gradient(135deg,#0a0f1e 0%,#0a1a2f 50%,#0b2b3b 100%);font-family:Arial,sans-serif}
+        .container{display:flex;justify-content:center;align-items:center;min-height:100vh;padding:20px}
+        .login-box{background:rgba(0,0,0,0.5);backdrop-filter:blur(10px);padding:40px;border-radius:20px;border:1px solid rgba(0,255,255,0.3);width:100%;max-width:400px}
+        h1{color:white;text-align:center;margin-bottom:30px}
+        input{width:100%;padding:12px;margin:10px 0;background:rgba(0,0,0,0.5);border:1px solid rgba(0,255,255,0.3);border-radius:10px;color:white;font-size:16px}
+        button{width:100%;padding:12px;background:linear-gradient(95deg,#2c5a7a,#1e3a5a);border:none;border-radius:10px;color:white;font-weight:bold;cursor:pointer;font-size:16px}
+        button:hover{opacity:0.9}
+        .error{color:#ff5555;text-align:center;margin-top:10px}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="login-box">
+            <h1>🔐 Admin Login</h1>
+            <input type="password" id="password" placeholder="Enter admin password">
+            <button onclick="login()">Login</button>
+            <div id="error" class="error"></div>
+        </div>
+    </div>
+    <script>
+        async function login() {
+            const password = document.getElementById('password').value;
+            const errorDiv = document.getElementById('error');
+            if (!password) {
+                errorDiv.innerText = 'Please enter password';
+                return;
+            }
+            try {
+                const res = await fetch('/admin/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    window.location.href = '/admin/dashboard';
+                } else {
+                    errorDiv.innerText = 'Invalid password';
+                }
+            } catch (err) {
+                errorDiv.innerText = 'Network error';
+            }
+        }
+        document.getElementById('password').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') login();
+        });
+    </script>
+</body>
+</html>

