@@ -14,10 +14,18 @@ const SESSION_SECRET = 'veribridge-secret-2024';
 // ==================== MIDDLEWARE ====================
 app.use(cors({
     origin: true,
-    credentials: true
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
 }));
 app.use(express.json());
 app.use(cookieParser());
+
+// Add request logging for debugging
+app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    next();
+});
 
 // ==================== DATA STORAGE ====================
 let links = new Map();
@@ -30,9 +38,13 @@ function generateCode() {
 // ==================== AUTH MIDDLEWARE ====================
 function isAuthenticated(req, res, next) {
     const token = req.cookies.admin_token;
+    console.log(`[Auth] Token present: ${!!token}`);
+    
     if (token === SESSION_SECRET) {
+        console.log('[Auth] Authentication successful');
         next();
     } else {
+        console.log('[Auth] Authentication failed');
         res.status(401).json({ error: 'Unauthorized', success: false });
     }
 }
@@ -96,13 +108,12 @@ app.get('/api/link/:code', (req, res) => {
 
 // ==================== ADMIN API (Protected) ====================
 
-// Get all links (with pagination and search)
+// Get all links
 app.get('/admin/api/links', isAuthenticated, (req, res) => {
     const { search = '' } = req.query;
     
     let allLinks = Array.from(links.values()).sort((a, b) => b.createdAt - a.createdAt);
     
-    // Apply search filter if provided
     if (search) {
         const searchLower = search.toLowerCase();
         allLinks = allLinks.filter(link => 
@@ -119,7 +130,7 @@ app.get('/admin/api/links', isAuthenticated, (req, res) => {
     });
 });
 
-// Get single link by code
+// Get single link
 app.get('/admin/api/links/:code', isAuthenticated, (req, res) => {
     const link = links.get(req.params.code);
     
@@ -130,7 +141,7 @@ app.get('/admin/api/links/:code', isAuthenticated, (req, res) => {
     }
 });
 
-// Create new link (admin)
+// Create new link
 app.post('/admin/api/links', isAuthenticated, (req, res) => {
     const { targetUrl } = req.body;
     
@@ -201,15 +212,21 @@ app.get('/admin/api/stats', isAuthenticated, (req, res) => {
 // Admin login API
 app.post('/admin/api/login', (req, res) => {
     const { password } = req.body;
+    console.log(`[Login] Attempt with password: ${password ? '***' : 'empty'}`);
+    console.log(`[Login] Expected password: ${ADMIN_PASSWORD}`);
+    
     if (password === ADMIN_PASSWORD) {
+        console.log('[Login] Password correct, setting cookie');
         res.cookie('admin_token', SESSION_SECRET, { 
             httpOnly: true, 
             maxAge: 7 * 24 * 60 * 60 * 1000,
             sameSite: 'lax',
-            path: '/'
+            path: '/',
+            secure: false // Set to true if using HTTPS only
         });
         res.json({ success: true });
     } else {
+        console.log('[Login] Password incorrect');
         res.status(401).json({ success: false, error: 'Invalid password' });
     }
 });
@@ -248,7 +265,6 @@ app.get('/admin/dashboard', isAuthenticated, (req, res) => {
             margin: 0 auto;
         }
         
-        /* Header */
         .header {
             display: flex;
             justify-content: space-between;
@@ -278,10 +294,8 @@ app.get('/admin/dashboard', isAuthenticated, (req, res) => {
         
         .logout-btn:hover {
             background: #ff3333;
-            transform: scale(1.02);
         }
         
-        /* Stats Cards */
         .stats {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -295,12 +309,10 @@ app.get('/admin/dashboard', isAuthenticated, (req, res) => {
             border-radius: 15px;
             padding: 20px;
             text-align: center;
-            transition: all 0.2s;
         }
         
         .stat-card:hover {
             border-color: #00ffff;
-            transform: translateY(-2px);
         }
         
         .stat-number {
@@ -315,7 +327,6 @@ app.get('/admin/dashboard', isAuthenticated, (req, res) => {
             font-size: 14px;
         }
         
-        /* Controls Bar */
         .controls {
             display: flex;
             gap: 15px;
@@ -345,7 +356,7 @@ app.get('/admin/dashboard', isAuthenticated, (req, res) => {
             border-color: #00ffff;
         }
         
-        .search-box button {
+        .search-box button, .add-link-btn, .refresh-btn {
             background: #2c5a7a;
             border: none;
             padding: 12px 20px;
@@ -353,38 +364,17 @@ app.get('/admin/dashboard', isAuthenticated, (req, res) => {
             color: white;
             cursor: pointer;
             transition: all 0.2s;
-        }
-        
-        .search-box button:hover {
-            background: #1e3a5a;
         }
         
         .add-link-btn {
             background: linear-gradient(135deg, #00aa00, #008800);
-            border: none;
-            padding: 12px 24px;
-            border-radius: 10px;
-            color: white;
-            cursor: pointer;
-            font-weight: bold;
-            transition: all 0.2s;
         }
         
-        .add-link-btn:hover {
+        .add-link-btn:hover, .search-box button:hover, .refresh-btn:hover {
             transform: scale(1.02);
-            background: linear-gradient(135deg, #00cc00, #00aa00);
+            opacity: 0.9;
         }
         
-        .refresh-btn {
-            background: #2c5a7a;
-            border: none;
-            padding: 12px 20px;
-            border-radius: 10px;
-            color: white;
-            cursor: pointer;
-        }
-        
-        /* Table */
         .table-wrapper {
             overflow-x: auto;
             background: rgba(0, 0, 0, 0.3);
@@ -442,8 +432,7 @@ app.get('/admin/dashboard', isAuthenticated, (req, res) => {
             flex-wrap: wrap;
         }
         
-        .edit-btn {
-            background: #2c5a7a;
+        .edit-btn, .copy-btn, .delete-btn {
             border: none;
             padding: 5px 12px;
             border-radius: 5px;
@@ -452,39 +441,13 @@ app.get('/admin/dashboard', isAuthenticated, (req, res) => {
             font-size: 12px;
         }
         
-        .edit-btn:hover {
-            background: #1e3a5a;
-        }
+        .edit-btn { background: #2c5a7a; }
+        .edit-btn:hover { background: #1e3a5a; }
+        .copy-btn { background: #555555; }
+        .copy-btn:hover { background: #666666; }
+        .delete-btn { background: #ff5555; }
+        .delete-btn:hover { background: #ff3333; }
         
-        .copy-btn {
-            background: #555555;
-            border: none;
-            padding: 5px 12px;
-            border-radius: 5px;
-            color: white;
-            cursor: pointer;
-            font-size: 12px;
-        }
-        
-        .copy-btn:hover {
-            background: #666666;
-        }
-        
-        .delete-btn {
-            background: #ff5555;
-            border: none;
-            padding: 5px 12px;
-            border-radius: 5px;
-            color: white;
-            cursor: pointer;
-            font-size: 12px;
-        }
-        
-        .delete-btn:hover {
-            background: #ff3333;
-        }
-        
-        /* Modal */
         .modal {
             display: none;
             position: fixed;
@@ -533,11 +496,6 @@ app.get('/admin/dashboard', isAuthenticated, (req, res) => {
             font-family: monospace;
         }
         
-        .modal-content input:focus, .modal-content textarea:focus {
-            outline: none;
-            border-color: #00ffff;
-        }
-        
         .modal-buttons {
             display: flex;
             gap: 10px;
@@ -565,7 +523,6 @@ app.get('/admin/dashboard', isAuthenticated, (req, res) => {
             cursor: pointer;
         }
         
-        /* Toast */
         .toast {
             position: fixed;
             bottom: 20px;
@@ -583,14 +540,8 @@ app.get('/admin/dashboard', isAuthenticated, (req, res) => {
         }
         
         @keyframes slideIn {
-            from {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
         }
         
         .loading {
@@ -606,19 +557,10 @@ app.get('/admin/dashboard', isAuthenticated, (req, res) => {
         }
         
         @media (max-width: 768px) {
-            th, td {
-                font-size: 12px;
-                padding: 10px 8px;
-            }
-            .action-btns {
-                flex-direction: column;
-            }
-            .controls {
-                flex-direction: column;
-            }
-            .search-box {
-                width: 100%;
-            }
+            th, td { font-size: 12px; padding: 10px 8px; }
+            .action-btns { flex-direction: column; }
+            .controls { flex-direction: column; }
+            .search-box { width: 100%; }
         }
     </style>
 </head>
@@ -675,7 +617,6 @@ app.get('/admin/dashboard', isAuthenticated, (req, res) => {
         </div>
     </div>
     
-    <!-- Edit Modal -->
     <div id="editModal" class="modal">
         <div class="modal-content">
             <h3>✏️ Edit Link</h3>
@@ -688,7 +629,6 @@ app.get('/admin/dashboard', isAuthenticated, (req, res) => {
         </div>
     </div>
     
-    <!-- Add Modal -->
     <div id="addModal" class="modal">
         <div class="modal-content">
             <h3>➕ Add New Link</h3>
@@ -700,7 +640,6 @@ app.get('/admin/dashboard', isAuthenticated, (req, res) => {
         </div>
     </div>
     
-    <!-- View Modal -->
     <div id="viewModal" class="modal">
         <div class="modal-content">
             <h3>🔗 Shareable Link</h3>
@@ -715,12 +654,11 @@ app.get('/admin/dashboard', isAuthenticated, (req, res) => {
     <script>
         let currentLinks = [];
         let currentEditCode = null;
-        let currentViewCode = null;
         let searchTimeout = null;
         
         async function loadLinks() {
             const search = document.getElementById('searchInput').value;
-            const url = search ? `/admin/api/links?search=${encodeURIComponent(search)}` : '/admin/api/links';
+            const url = search ? \`/admin/api/links?search=\${encodeURIComponent(search)}\` : '/admin/api/links';
             
             try {
                 const res = await fetch(url);
@@ -743,6 +681,10 @@ app.get('/admin/dashboard', isAuthenticated, (req, res) => {
         async function loadStats() {
             try {
                 const res = await fetch('/admin/api/stats');
+                if (res.status === 401) {
+                    window.location.href = '/admin';
+                    return;
+                }
                 const data = await res.json();
                 if (data.success) {
                     document.getElementById('totalLinks').innerText = data.stats.totalLinks;
@@ -789,7 +731,6 @@ app.get('/admin/dashboard', isAuthenticated, (req, res) => {
             const baseUrl = window.location.origin;
             const shareableLink = \`\${baseUrl}/verify.html?code=\${code}\`;
             document.getElementById('viewLinkCode').value = shareableLink;
-            currentViewCode = code;
             document.getElementById('viewModal').classList.add('active');
         }
         
@@ -914,22 +855,16 @@ app.get('/admin/dashboard', isAuthenticated, (req, res) => {
             toast.className = \`toast \${type}\`;
             toast.innerText = message;
             document.body.appendChild(toast);
-            setTimeout(() => {
-                toast.remove();
-            }, 3000);
+            setTimeout(() => toast.remove(), 3000);
         }
         
-        // Auto-search on typing
         document.getElementById('searchInput').addEventListener('input', () => {
             if (searchTimeout) clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(() => {
-                loadLinks();
-            }, 500);
+            searchTimeout = setTimeout(() => loadLinks(), 500);
         });
         
-        // Load initial data
         loadLinks();
-        setInterval(loadLinks, 30000); // Auto-refresh every 30 seconds
+        setInterval(loadLinks, 30000);
     </script>
 </body>
 </html>
@@ -984,10 +919,11 @@ app.get('/admin', (req, res) => {
                 if (data.success) {
                     window.location.href = '/admin/dashboard';
                 } else {
-                    errorDiv.innerText = 'Invalid password';
+                    errorDiv.innerText = data.error || 'Invalid password';
                 }
             } catch (err) {
-                errorDiv.innerText = 'Network error';
+                console.error('Login error:', err);
+                errorDiv.innerText = 'Network error - check console';
             }
         }
         document.getElementById('password').addEventListener('keypress', (e) => {
