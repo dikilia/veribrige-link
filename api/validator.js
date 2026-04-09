@@ -1,6 +1,5 @@
 // ==================== URL VALIDATOR & LINK HANDLER ====================
 // Edit this file to control which URLs are allowed to be shortened
-// ======================================================================
 
 // Allowed Roblox domains (add or remove as needed)
 const ALLOWED_DOMAINS = [
@@ -8,8 +7,8 @@ const ALLOWED_DOMAINS = [
     'www.roblox.com',
     'web.roblox.com',
     'api.roblox.com',
-    'roblox.com.ge',
-    'roblox.com.br',
+    'roblox.com.ge',  // Custom domain example
+    'roblox.com.br',  // Add more as needed
     'roblox.com.tr',
     'roblox.com.mx',
     'roblox.com.au'
@@ -18,26 +17,26 @@ const ALLOWED_DOMAINS = [
 // Allowed path patterns (regular expressions)
 // Add patterns for specific pages you want to allow
 const ALLOWED_PATTERNS = [
-    /^\/login/,              // Login page
-    /^\/users\/\d+/,         // User profiles
-    /^\/groups\/\d+/,        // Groups
-    /^\/games\/\d+/,         // Games
-    /^\/catalog/,            // Catalog items
-    /^\/my\/item/,           // My items
-    /^\/item/,               // Item pages
-    /^\/profile/,            // Profile pages
-    /^\/home/,               // Home page
-    /^\/settings/,           // Settings
-    /^\/account/,            // Account pages
-    /^\/gifts/,              // Gift cards
-    /^\/premium/,            // Premium pages
-    /^\/robux/,              // Robux pages
-    /^\/develop/,            // Developer pages
-    /^\/create/,             // Create pages
-    /^\/library/,            // Library
-    /^\/trade/,              // Trading
-    /^\/messages/,           // Messages
-    /^\/friends/,            // Friends
+    /^\/login/,           // Login page
+    /^\/users\/\d+/,      // User profiles
+    /^\/groups\/\d+/,     // Groups
+    /^\/games\/\d+/,      // Games
+    /^\/catalog/,         // Catalog items
+    /^\/my\/item/,        // My items
+    /^\/item/,            // Item pages
+    /^\/profile/,         // Profile pages
+    /^\/home/,            // Home page
+    /^\/settings/,        // Settings
+    /^\/account/,         // Account pages
+    /^\/gifts/,           // Gift cards
+    /^\/premium/,         // Premium pages
+    /^\/robux/,           // Robux pages
+    /^\/develop/,         // Developer pages
+    /^\/create/,          // Create pages
+    /^\/library/,         // Library
+    /^\/trade/,           // Trading
+    /^\/messages/,        // Messages
+    /^\/friends/,         // Friends
     /^\/groups\/group\.aspx/, // Legacy groups
     /^\/Game\/Place\.aspx/,   // Game place
     /^\/games\/\d+\/.*/,      // Games with subpaths
@@ -55,27 +54,19 @@ const BLOCKED_KEYWORDS = [
     'ban',
     'suspicious',
     'malware',
-    'phishing',
-    'hack',
-    'exploit',
-    'cheat'
+    'phishing'
 ];
 
 // Custom validation function - add your own logic here
 function customValidation(url, parsedUrl) {
-    // Block URLs with too many redirects
+    // Example: Block URLs with too many redirects
     if (url.split('/').length > 15) {
         return { valid: false, message: 'URL has too many redirects' };
     }
     
-    // Block URLs with special characters
+    // Example: Block URLs with special characters
     if (url.includes('<') || url.includes('>') || url.includes('"') || url.includes("'")) {
         return { valid: false, message: 'URL contains invalid characters' };
-    }
-    
-    // Block URLs with excessive length
-    if (url.length > 500) {
-        return { valid: false, message: 'URL is too long (max 500 characters)' };
     }
     
     // All validations passed
@@ -148,9 +139,7 @@ function isValidRobloxUrl(url) {
             else if (path.startsWith('/login') || 
                      path.startsWith('/signup') ||
                      path.startsWith('/verify') ||
-                     path.startsWith('/auth') ||
-                     path.startsWith('/confirm') ||
-                     path.startsWith('/forgot-password')) {
+                     path.startsWith('/auth')) {
                 pathAllowed = true;
             }
         }
@@ -158,7 +147,8 @@ function isValidRobloxUrl(url) {
         if (!pathAllowed) {
             return { 
                 valid: false, 
-                message: `Path "${path}" is not allowed. Allowed patterns include: /login, /users/123, /groups/123, /games/123`
+                message: `Path "${path}" is not allowed. Allowed patterns include: /login, /users/123, /groups/123, /games/123`,
+                allowedPatterns: ALLOWED_PATTERNS.map(p => p.toString())
             };
         }
         
