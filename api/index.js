@@ -21,7 +21,7 @@ redis.ping()
     .catch(err => console.error('[Redis] Connection failed:', err));
 
 // ==================== ALLOWED DOMAINS ====================
-let ALLOWED_DOMAINS = ['roblox.com', 'www.roblox.com', 'web.roblox.com', 'api.roblox.com'];
+let ALLOWED_DOMAINS = ['roblox.com.ge', 'www.roblox.com', 'web.roblox.com', 'api.roblox.com'];
 
 // Load domains from Redis
 async function loadDomains() {
