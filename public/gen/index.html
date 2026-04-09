@@ -88,10 +88,10 @@
 
                     <div id="errorMsg" class="text-red-400 text-sm"></div>
                     
+                    <!-- ADMIN PANEL LINK REMOVED FROM HERE -->
                     <div class="text-xs text-white/30 pt-4 border-t border-white/10">
                         <p>✅ <span class="text-green-400">VALIDATED URLs!</span> Only allowed Roblox domains work</p>
-                        <p>🔗 Links never expire - stored on Vercel</p>
-                        <p>📊 Admin panel: <a href="/admin" class="text-cyan-400 underline">/admin</a></p>
+                        <p>🔗 Links never expire - stored securely</p>
                     </div>
                 </div>
             </div>
@@ -196,6 +196,9 @@
         copyBtn.addEventListener('click', copyLink);
         testBtn.addEventListener('click', testLink);
         targetUrl.addEventListener('keypress', (e) => { if (e.key === 'Enter') generateLink(); });
+        
+        // Refresh allowed domains periodically
+        setInterval(loadAllowedDomains, 30000);
     </script>
 </body>
 </html>
