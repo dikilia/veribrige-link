@@ -4,10 +4,6 @@
     {
       "src": "api/index.js",
       "use": "@vercel/node"
-    },
-    {
-      "src": "public/**",
-      "use": "@vercel/static"
     }
   ],
   "routes": [
@@ -20,28 +16,28 @@
       "dest": "/api/index.js"
     },
     {
-      "src": "/health",
+      "src": "/admin/dashboard",
       "dest": "/api/index.js"
-    },
-    {
-      "src": "/gen",
-      "dest": "/public/gen/index.html"
     },
     {
       "src": "/admin",
       "dest": "/api/index.js"
     },
     {
-      "src": "/admin/dashboard",
+      "src": "/gen",
       "dest": "/api/index.js"
     },
     {
       "src": "/verify.html",
-      "dest": "/public/verify.html"
+      "dest": "/api/index.js"
+    },
+    {
+      "src": "/health",
+      "dest": "/api/index.js"
     },
     {
       "src": "/(.*)",
-      "dest": "/public/gen/index.html"
+      "dest": "/api/index.js"
     }
   ]
 }
