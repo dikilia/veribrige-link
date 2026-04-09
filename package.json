@@ -1,15 +1,10 @@
 {
-  "name": "veribridge-vercel",
+  "name": "veribridge",
   "version": "1.0.0",
-  "description": "VeriBridge - Shareable verification links with admin panel",
-  "main": "api/index.js",
-  "scripts": {
-    "start": "node api/index.js",
-    "dev": "vercel dev"
-  },
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5",
-    "cookie-parser": "^1.4.6"
+    "cookie-parser": "^1.4.6",
+    "@upstash/redis": "^1.34.0"
   }
 }
