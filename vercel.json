@@ -28,16 +28,8 @@
       "dest": "/public/gen/index.html"
     },
     {
-      "src": "/gen/(.*)",
-      "dest": "/public/gen/index.html"
-    },
-    {
       "src": "/admin",
       "dest": "/public/admin/index.html"
-    },
-    {
-      "src": "/admin/dashboard",
-      "dest": "/public/admin/dashboard.html"
     },
     {
       "src": "/verify.html",
