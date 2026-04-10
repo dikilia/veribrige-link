@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const { Redis } = require('@upstash/redis');
+const validator = require('./validator');
 
 const app = express();
 
@@ -17,15 +18,19 @@ const redis = new Redis({
 
 redis.ping().then(() => console.log('[Redis] Connected')).catch(err => console.error('[Redis] Error:', err));
 
-// ==================== ALLOWED DOMAINS ====================
-let ALLOWED_DOMAINS = ['roblox.com', 'www.roblox.com', 'web.roblox.com', 'api.roblox.com'];
+// ==================== ALLOWED DOMAINS (FROM VALIDATOR) ====================
+// Load domains from validator.js
+let ALLOWED_DOMAINS = validator.getAllowedDomains();
 
 async function loadDomains() {
     try {
         const saved = await redis.get('allowed_domains');
         if (saved && Array.isArray(saved)) {
             ALLOWED_DOMAINS = saved;
-            console.log('[Domains] Loaded:', ALLOWED_DOMAINS);
+            console.log('[Domains] Loaded from Redis:', ALLOWED_DOMAINS);
+        } else {
+            // If no saved domains, use validator defaults
+            ALLOWED_DOMAINS = validator.getAllowedDomains();
         }
     } catch (err) { console.error(err); }
 }
@@ -33,7 +38,7 @@ async function loadDomains() {
 async function saveDomains() {
     try {
         await redis.set('allowed_domains', ALLOWED_DOMAINS);
-        console.log('[Domains] Saved:', ALLOWED_DOMAINS);
+        console.log('[Domains] Saved to Redis:', ALLOWED_DOMAINS);
     } catch (err) { console.error(err); }
 }
 
@@ -72,20 +77,24 @@ app.post('/api/generate', async (req, res) => {
     const { url } = req.body;
     if (!url) return res.status(400).json({ error: 'No URL provided' });
     
-    let allowed = false;
-    for (const domain of ALLOWED_DOMAINS) {
-        if (url.includes(domain)) { allowed = true; break; }
-    }
-    if (!allowed) {
-        return res.status(400).json({ error: 'Domain not allowed. Allowed: ' + ALLOWED_DOMAINS.join(', ') });
+    // USE VALIDATOR TO CHECK URL
+    const validation = validator.isValidRobloxUrl(url);
+    
+    if (!validation.valid) {
+        return res.status(400).json({ 
+            error: validation.message,
+            success: false,
+            allowedDomains: ALLOWED_DOMAINS
+        });
     }
     
+    const cleanUrl = validation.cleanUrl || validator.normalizeUrl(url);
     const code = generateCode();
     const nextId = await getNextId();
-    const linkData = { id: nextId, code: code, targetUrl: url, createdAt: Date.now(), clicks: 0 };
+    const linkData = { id: nextId, code: code, targetUrl: cleanUrl, createdAt: Date.now(), clicks: 0, lastAccessed: null };
     await redis.set(`link:${code}`, JSON.stringify(linkData));
     const shareableLink = 'https://' + req.headers.host + '/verify.html?code=' + code;
-    console.log('[API] Generated link:', code, '->', url);
+    console.log('[API] Generated link:', code, '->', cleanUrl);
     res.json({ success: true, shareableLink: shareableLink, code: code });
 });
 
@@ -95,6 +104,7 @@ app.get('/api/link/:code', async (req, res) => {
     if (!data) return res.status(404).json({ error: 'Link not found' });
     const linkData = JSON.parse(data);
     linkData.clicks++;
+    linkData.lastAccessed = Date.now();
     await redis.set(`link:${code}`, JSON.stringify(linkData));
     res.json({ success: true, targetUrl: linkData.targetUrl });
 });
@@ -114,10 +124,17 @@ app.get('/admin/api/links', isAuthenticated, async (req, res) => {
 app.put('/admin/api/links/:code', isAuthenticated, async (req, res) => {
     const { code } = req.params;
     const { targetUrl } = req.body;
+    
+    // Validate the new URL
+    const validation = validator.isValidRobloxUrl(targetUrl);
+    if (!validation.valid) {
+        return res.status(400).json({ success: false, error: validation.message });
+    }
+    
     const data = await redis.get(`link:${code}`);
     if (!data) return res.status(404).json({ success: false });
     const linkData = JSON.parse(data);
-    linkData.targetUrl = targetUrl;
+    linkData.targetUrl = validation.cleanUrl || validator.normalizeUrl(targetUrl);
     await redis.set(`link:${code}`, JSON.stringify(linkData));
     res.json({ success: true });
 });
@@ -306,11 +323,11 @@ document.getElementById('tabDomainsBtn').onclick=function(){
     loadDomains();
 };
 function showToast(msg,type){type=type||'success';var t=document.createElement('div');t.className='toast '+type;t.innerText=msg;document.body.appendChild(t);setTimeout(function(){t.remove()},3000);}
-async function loadDomains(){try{var r=await fetch('/admin/api/domains');if(r.status===401){window.location.href='/admin';return}var d=await r.json();if(d.success){var html='';for(var i=0;i<d.domains.length;i++)html+='<div class="domain-tag">'+d.domains[i]+'<button onclick="removeDomain(\\''+d.domains[i]+'\\')">✕</button></div>';document.getElementById('domainsList').innerHTML=html;document.getElementById('domainCount').innerText=d.domains.length}}catch(e){console.error(e)}}
+async function loadDomains(){try{var r=await fetch('/admin/api/domains');if(r.status===401){window.location.href='/admin';return}var d=await r.json();if(d.success){var html='';for(var i=0;i<d.domains.length;i++)html+='<div class="domain-tag">'+d.domains[i]+'<button onclick="removeDomain(\\''+d.domains[i]+'\\')">✕</button></div>';document.getElementById('domainsList').innerHTML=html}}catch(e){console.error(e)}}
 async function addDomain(){var input=document.getElementById('newDomain');var domain=input.value.trim().toLowerCase();if(!domain){showToast('Please enter a domain','error');return}try{var r=await fetch('/admin/api/domains',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({domain:domain})});var d=await r.json();if(d.success){loadDomains();input.value='';showToast('Domain added!')}else{showToast(d.error||'Failed','error')}}catch(e){showToast('Error','error')}}
 async function removeDomain(domain){if(!confirm('Remove "'+domain+'"?'))return;try{var r=await fetch('/admin/api/domains/'+encodeURIComponent(domain),{method:'DELETE'});var d=await r.json();if(d.success){loadDomains();showToast('Domain removed!')}else{showToast(d.error||'Failed','error')}}catch(e){showToast('Error','error')}}
-async function loadLinks(){var search=document.getElementById('searchInput').value;var url=search?'/admin/api/links?search='+encodeURIComponent(search):'/admin/api/links';try{var r=await fetch(url);if(r.status===401){window.location.href='/admin';return}var d=await r.json();if(d.success){var links=d.links||[];var totalClicks=0;for(var i=0;i<links.length;i++)totalClicks+=links[i].clicks||0;document.getElementById('totalLinks').innerText=links.length;document.getElementById('totalClicks').innerText=totalClicks;document.getElementById('avgClicks').innerText=links.length?(totalClicks/links.length).toFixed(2):0;var tbody=document.getElementById('tableBody');if(links.length===0){tbody.innerHTML='<tr><td colspan="6" style="text-align:center">No links found</td></tr>';return}var html='';for(var i=0;i<links.length;i++){var l=links[i];html+='<tr><td>'+(l.id||(i+1))+'</td><td><code>'+l.code+'</code></td><td style="max-width:300px;word-break:break-all">'+l.targetUrl+'</td><td>'+(l.clicks||0)+'</td><td>'+new Date(l.createdAt).toLocaleString()+'</td><td><button class="edit-btn" onclick="openEdit(\\''+l.code+'\\')">Edit</button> <button class="delete-btn" onclick="deleteLink(\\''+l.code+'\\')">Delete</button></td></tr>'}tbody.innerHTML=html}}catch(e){console.error(e)}}
-function openEdit(code){var link=null;fetch('/admin/api/links/'+code).then(r=>r.json()).then(d=>{if(d.success){document.getElementById('editCode').value=d.link.code;document.getElementById('editUrl').value=d.link.targetUrl;document.getElementById('editModal').style.display='flex';currentEditCode=code}})}
+async function loadLinks(){var search=document.getElementById('searchInput').value;var url=search?'/admin/api/links?search='+encodeURIComponent(search):'/admin/api/links';try{var r=await fetch(url);if(r.status===401){window.location.href='/admin';return}var d=await r.json();if(d.success){var links=d.links||[];var totalClicks=0;for(var i=0;i<links.length;i++)totalClicks+=links[i].clicks||0;document.getElementById('totalLinks').innerText=links.length;document.getElementById('totalClicks').innerText=totalClicks;document.getElementById('avgClicks').innerText=links.length?(totalClicks/links.length).toFixed(2):0;var tbody=document.getElementById('tableBody');if(links.length===0){tbody.innerHTML='<tr><td colspan="6" style="text-align:center">No links found</div>--');return}var html='';for(var i=0;i<links.length;i++){var l=links[i];html+='<tr><td>'+(l.id||(i+1))+'</div>--');}tbody.innerHTML=html}}catch(e){console.error(e)}}
+function openEdit(code){fetch('/admin/api/links/'+code).then(r=>r.json()).then(d=>{if(d.success){document.getElementById('editCode').value=d.link.code;document.getElementById('editUrl').value=d.link.targetUrl;document.getElementById('editModal').style.display='flex';currentEditCode=code}})}
 async function saveEdit(){var newUrl=document.getElementById('editUrl').value;await fetch('/admin/api/links/'+currentEditCode,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({targetUrl:newUrl})});closeModal();loadLinks();showToast('Link updated!');}
 async function deleteLink(code){if(confirm('Delete this link?')){await fetch('/admin/api/links/'+code,{method:'DELETE'});loadLinks();showToast('Link deleted!');}}
 function closeModal(){document.getElementById('editModal').style.display='none';}
@@ -370,7 +387,7 @@ app.get('/gen', (req, res) => {
 </html>`);
 });
 
-// ==================== VERIFICATION PAGE (YOUR BEAUTIFUL HTML) ====================
+// ==================== VERIFICATION PAGE ====================
 app.get('/verify.html', (req, res) => {
     const code = req.query.code;
     if (!code) {
@@ -378,7 +395,7 @@ app.get('/verify.html', (req, res) => {
         return;
     }
     
-    const html = `<!DOCTYPE html>
+    res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -849,9 +866,7 @@ landingBtn.addEventListener('click', () => {
 updateUI();
 </script>
 </body>
-</html>`;
-    
-    res.send(html);
+</html>`);
 });
 
 // ==================== ROOT REDIRECT ====================
